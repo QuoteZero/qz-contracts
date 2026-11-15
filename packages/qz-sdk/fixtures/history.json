@@ -1,0 +1,17 @@
+{
+  "address": "0x1111111111111111111111111111111111111111",
+  "items": [
+    {
+      "kind": "curve_buy",
+      "txHash": "0xabababababababababababababababababababababababababababababababab",
+      "blockNumber": 1199,
+      "logIndex": 4,
+      "timestamp": 1763299900,
+      "amount": "1000000000000000000",
+      "machineId": null,
+      "ticketId": null,
+      "detail": "Bought 940.45 QZ"
+    }
+  ],
+  "nextCursor": null
+}

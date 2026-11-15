@@ -1,0 +1,17 @@
+{
+  "owner": "0x2222222222222222222222222222222222222222",
+  "paused": {
+    "core": false,
+    "buys": false,
+    "hook": false,
+    "converter": false
+  },
+  "routesSealed": true,
+  "metadataFrozen": false,
+  "contracts": {
+    "QZCore": "0x3333333333333333333333333333333333333333"
+  },
+  "limits": {
+    "F0_MAX_PER_WALLET": "2000000000000000000"
+  }
+}

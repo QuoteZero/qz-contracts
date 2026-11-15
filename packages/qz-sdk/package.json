@@ -1,0 +1,39 @@
+{
+  "name": "@qz/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QuoteZero shared contract: ABIs, event catalog, read-model and REST types, fixtures, deployments loader, curve math.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./abis": "./src/generated/abis/index.ts",
+    "./constants": "./src/constants.ts",
+    "./curve": "./src/curve.ts",
+    "./events": "./src/events.ts",
+    "./api": "./src/api.ts",
+    "./types": "./src/types.ts",
+    "./fixtures": "./src/fixtures.ts",
+    "./deployment": "./src/deployment.ts",
+    "./node": "./src/node.ts",
+    "./schema/deployment.schema.json": "./schema/deployment.schema.json"
+  },
+  "files": ["src", "schema", "fixtures"],
+  "scripts": {
+    "gen": "node scripts/gen.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test"
+  },
+  "peerDependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "viem": "^2.21.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "chainId": 4663,
+  "indexedBlock": 1200,
+  "headBlock": 1203,
+  "indexedAt": 1763300000,
+  "phase": "F1",
+  "launchAt": 1763290000,
+  "buysPaused": false,
+  "corePaused": false,
+  "graduated": false,
+  "epoch": 42
+}

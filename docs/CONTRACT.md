@@ -94,7 +94,7 @@ a new ABI event without a row fails `tsc`).
 | QZCircuit | PotPulled | uint256 indexed week, uint256 amount | The Circuit pulls its WETH pot from the hook (weekly accounting). | `chain.pot_pulls` | circuit, admin |
 | QZCircuit | PotRedirected | uint256 amount | After the 180 day redirect delay unclaimed pot is sent to the converter reward flow. | `chain.circuit_weeks` | circuit, admin |
 | QZCircuit | WeekSettled | uint256 indexed week, uint256 pot, uint256 completed, uint256 perMachine | A week closes: pot and completer count fixed, `perMachine` is the WETH each completer can claim. | `chain.circuit_weeks` | circuit |
-| QZLiquidityLock | Compounded | uint256 amount | Anyone calls compound(): the LP share of hook fees (0.50% of swap volume, 1/6 of the 3% hook fee) is added back to the locked position. | `chain.lock_events` | token, admin |
+| QZLiquidityLock | Compounded | uint256 amount | The keeper calls compound(min, max): the LP share of hook fees (0.50% of swap volume, 1/6 of the 3% hook fee) is added back to the locked position. | `chain.lock_events` | token, admin |
 | QZLiquidityLock | Seeded | uint128 liquidity | Graduation: full-range liquidity minted into the pool and locked forever. | `chain.lock_events` | token, admin |
 | QZMachineAdapter | Activated (R2) | - | Anyone calls activate() (one-time) after the owner renounced ownership and cleared the LayerZero delegate; sends stay disabled until then (I7). | `chain.pauses` | admin |
 | QZMachineAdapter | MachineDeparted (R2) | uint256 indexed id, uint32 dstEid | A machine is locked in the adapter and its ONFT sent to a spoke chain. | `chain.bridge_transfers` | circuit, machines, history |
@@ -168,7 +168,8 @@ State is `(sold, reserve)`. Reference code: `QZCurveMath.sol` and `packages/qz-s
 
 ## Additions beyond SPEC §5.1 (decided in C0, spec was silent)
 
-- QZCore: `onTicketRevealed` (entropy-only callback, emits `TicketRevealed`), `authorizePoolTransfer` / `clearPoolTransferAuthorization` (hook-only, T13), `setBaseURI` / `freezeMetadata` forwarding to QZMachine.
+- QZCore: `onTicketRevealed` (entropy-only callback, emits `TicketRevealed`), `grantPoolTransfer(toPool, fromPool)` (hook-only, T13: transient per-direction QZ allowance of the PoolManager, granted from the exact QZ delta of the canonical pool's swaps and of the lock's liquidity changes), `setBaseURI` / `freezeMetadata` forwarding to QZMachine.
+- QZLiquidityLock: `compound(sqrtPriceMinX96, sqrtPriceMaxX96)` is keeper-only (`keeper` is a sealed constructor argument), reverts when the canonical pool was swapped earlier in the same transaction (`QZHook.pullLpPot` reverts `PoolSwappedThisTransaction`) and when the pool price is outside the window; `QZHook.authorizeLockSettlement(int128)` is lock-only.
 - Curve events carry `recipient`: `CurveBuy(buyer, recipient, ethIn, qzOut, fee, phase)`, `CurveSell(seller, recipient, qzIn, ethOut, fee)`.
 - Extra events: `Started`, `BuysPaused` / `BuysUnpaused`, `PotPulled`, converter `PotsPulled` / `RouteSet` / `RoutesSealed`, vault `TrackThawed`.
 - QZHook and QZConverter are `IQZPausable` (SPEC §4.2 pause scope includes swap through the hook and convert).

@@ -18,7 +18,7 @@ interface IQZErrors {
 
 /// @notice Pause scope (§4.2): hardwire, curve buys, outbound `send`, swaps through the hook, `convert`.
 ///         NEVER paused: sell to the curve, wallet-to-wallet transfers, `claim`, `claimCircuit`, inbound `lzReceive`.
-///         Pausing has no power to move assets. Owner and pauser are the same single EOA (decision of 16 Nov, no Safe);
+///         Pausing has no power to move assets. Owner and pauser are the same single EOA (the QuoteZero team, 16 Nov, no Safe);
 ///         the pauser may be a different address on a given chain (role PAUSER, §4.2 table).
 interface IQZPausable is IQZErrors {
     /// @dev `by` = caller.

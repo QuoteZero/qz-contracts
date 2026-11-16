@@ -27,6 +27,13 @@ depth = 64
 [profile.ci.fuzz]
 runs = 10000
 
+# C8 heavy invariant campaign: FOUNDRY_PROFILE=invariant forge test --match-path "test/invariant/*"
+# (>= 10k runs per invariant; the I6 and I9 ones raise runs to 100k with inline `invariant.invariant.runs`).
+[profile.invariant.invariant]
+runs = 10000
+depth = 24
+fail_on_revert = false
+
 [fmt]
 line_length = 120
 tab_width = 4

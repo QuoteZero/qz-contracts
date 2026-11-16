@@ -22,8 +22,9 @@ import {QZTraitsTable} from "./QZTraitsTable.sol";
 ///         - Traits are a fixed table (`QZTraitsTable`, one byte per id) generated from `metadata/traits.json`, whose
 ///           keccak256 is `TRAITS_HASH`. They are defined for every id, minted or not.
 ///         - The base URI is set by the owner through `QZCore` until `freezeMetadata`, once.
-///         - ERC-2981: 5% of the sale price to `royaltyReceiver` (4% reward pot + 1% treasury, §1.4; the split is the
-///           receiver's job). Marketplaces enforce it on a best-effort basis only.
+///         - ERC-2981: 5% of the sale price to `royaltyReceiver` (4% reward pot + 1% treasury, §1.4). The receiver is
+///           deployed as `QZRoyaltySplitter` (80% WETH to the converter, 20% to the treasury), never a bare treasury.
+///           Marketplaces enforce it on a best-effort basis only.
 ///         - No owner, no pause and no admin transfer: the only privileged caller is `QZCore`. The mint is not a
 ///           safe-mint (no receiver callback) so a hardwire cannot be re-entered from the holder.
 contract QZMachine is ERC721, IQZMachine {

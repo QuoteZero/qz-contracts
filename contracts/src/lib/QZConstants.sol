@@ -204,8 +204,8 @@ library QZConstants {
     /// @dev §5.2 enforced options: msgType SEND = 1 (SEND_AND_CALL = 2 not opened in R1/R2 phase 1).
     uint16 internal constant LZ_MSG_TYPE_SEND = 1;
     /// @dev §5.2 enforced lzReceive gas per path.
-    uint128 internal constant GAS_ONFT_HOME_TO_SPOKE = 100_000;
-    uint128 internal constant GAS_ONFT_SPOKE_TO_HOME = 150_000;
+    uint128 internal constant GAS_ONFT_HOME_TO_SPOKE = 120_000;
+    uint128 internal constant GAS_ONFT_SPOKE_TO_HOME = 190_000;
     uint128 internal constant GAS_OFT_HOME_TO_SPOKE = 100_000;
     uint128 internal constant GAS_OFT_SPOKE_TO_HOME = 1_200_000;
     /// @dev §5.2 rate limiter example: 200 QZ / 1 h per EID and 50 machines / 1 h per EID. [INFERENCE, calibrate on testnet]

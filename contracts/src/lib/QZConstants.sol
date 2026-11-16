@@ -5,7 +5,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
 /// @title QZConstants
 /// @notice Every number of the QuoteZero spec (docs/SPEC.md) in one place. Each constant cites its spec section.
-///         The section numbers of the spec are the contract; the 16 Nov changes (top of the spec) win.
+///         The section numbers are the contract. The QuoteZero team's 16 Nov changes (top of the spec) win.
 ///         Nothing here is configurable: contracts read these at compile time and seal them in constructors.
 library QZConstants {
     // ───────────────────────────── §0, §1.3 supply, machines, tiers ─────────────────────────────

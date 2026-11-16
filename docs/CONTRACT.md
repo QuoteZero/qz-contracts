@@ -1,7 +1,7 @@
 # QuoteZero contract reference
 
 Everything downstream builds against this file, `contracts/src/interfaces/**`, `contracts/src/lib/**` and `@qz/sdk`.
-Spec numbers come from the project spec (the 16 Nov changes on top). Tables between `GENERATED` markers are written by
+Section references such as SPEC §5.1 use the numbering of the project design notes, which are not part of this repository. Tables between `GENERATED` markers are written by
 `npm run gen` in `packages/qz-sdk`; do not edit them by hand. A test fails when they are stale.
 
 ## Layout

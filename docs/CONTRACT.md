@@ -140,7 +140,7 @@ response: `@qz/sdk/fixtures`.
 | `GET /api/chain/curve` | see `RouteQuery<'curve'>` | `RouteResponse<'curve'>` | trade, token | Curve state: sold, reserve, price, progress, limits |
 | `GET /api/chain/curve/trades` | see `RouteQuery<'curveTrades'>` | `RouteResponse<'curveTrades'>` | trade, token | Curve trades, newest first, optional account filter |
 | `GET /api/chain/tickets` | see `RouteQuery<'tickets'>` | `RouteResponse<'tickets'>` | machines | Pending and revealed tickets of a wallet |
-| `GET /api/chain/machines` | see `RouteQuery<'machines'>` | `RouteResponse<'machines'>` | machines | Machine gallery, filterable by owner, tier, track, relic |
+| `GET /api/chain/machines` | see `RouteQuery<'machines'>` | `RouteResponse<'machines'>` | machines | Machine gallery, filterable by owner, tier, track, relic, hardwired |
 | `GET /api/chain/machines/:id` | see `RouteQuery<'machine'>` | `RouteResponse<'machine'>` | machines, rewards, circuit | One machine with rewards and Circuit state |
 | `GET /api/chain/rewards` | see `RouteQuery<'rewards'>` | `RouteResponse<'rewards'>` | rewards | Claimable stock rewards per (machine, track) of a wallet |
 | `GET /api/chain/rewards/tracks` | see `RouteQuery<'rewardTracks'>` | `RouteResponse<'rewardTracks'>` | rewards, admin | Per-track accumulators and frozen state |

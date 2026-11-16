@@ -100,8 +100,8 @@ a new ABI event without a row fails `tsc`).
 | QZMachineAdapter | Activated (R2) | - | Anyone calls activate() (one-time) after the owner renounced ownership and cleared the LayerZero delegate; sends stay disabled until then (I7). | `chain.pauses` | admin |
 | QZMachineAdapter | MachineDeparted (R2) | uint256 indexed id, uint32 dstEid | A machine is locked in the adapter and its ONFT sent to a spoke chain. | `chain.bridge_transfers` | circuit, machines, history |
 | QZMachineAdapter | MachineReturned (R2) | uint256 indexed id, uint32 srcEid | A machine ONFT comes back from a spoke chain and is released from the adapter. | `chain.bridge_transfers` | circuit, machines, history |
-| QZMachineAdapter | ONFTReceived (R2) | bytes32 indexed guid, uint32 srcEid, address indexed toAddress, uint256 tokenId | LayerZero delivered a machine from a spoke chain. | `chain.bridge_transfers` | circuit, machines |
-| QZMachineAdapter | ONFTSent (R2) | bytes32 indexed guid, uint32 dstEid, address indexed fromAddress, uint256 tokenId | A machine was sent to a spoke chain through LayerZero. | `chain.bridge_transfers` | circuit, machines |
+| QZMachineAdapter | ONFTReceived (R2) | bytes32 indexed guid, uint32 srcEid, address indexed toAddress, uint256 tokenId | LayerZero delivered a machine from a spoke chain. | `chain.bridge_transfers` | circuit, machines, history |
+| QZMachineAdapter | ONFTSent (R2) | bytes32 indexed guid, uint32 dstEid, address indexed fromAddress, uint256 tokenId | A machine was sent to a spoke chain through LayerZero. | `chain.bridge_transfers` | circuit, machines, history |
 | QZMachineAdapter | Paused (R2) | address by | Pauser (the single owner EOA) calls pause(). | `chain.pauses` | admin |
 | QZMachineAdapter | Unpaused (R2) | address by | Pauser (the single owner EOA) calls unpause(). | `chain.pauses` | admin |
 | QZTokenAdapter | Activated (R2) | - | Anyone calls activate() (one-time) after the owner renounced ownership and cleared the LayerZero delegate; sends stay disabled until then (I7). | `chain.pauses` | admin |
@@ -141,7 +141,7 @@ response: `@qz/sdk/fixtures`.
 | `GET /api/chain/curve` | see `RouteQuery<'curve'>` | `RouteResponse<'curve'>` | trade, token | Curve state: sold, reserve, price, progress, limits |
 | `GET /api/chain/curve/trades` | see `RouteQuery<'curveTrades'>` | `RouteResponse<'curveTrades'>` | trade, token | Curve trades, newest first, optional account filter |
 | `GET /api/chain/tickets` | see `RouteQuery<'tickets'>` | `RouteResponse<'tickets'>` | machines | Pending and revealed tickets of a wallet |
-| `GET /api/chain/machines` | see `RouteQuery<'machines'>` | `RouteResponse<'machines'>` | machines | Machine gallery, filterable by owner, tier, track, relic, hardwired |
+| `GET /api/chain/machines` | see `RouteQuery<'machines'>` | `RouteResponse<'machines'>` | machines | Machine gallery, filterable by owner, tier, track, relic, hardwired, location (LayerZero eid) |
 | `GET /api/chain/machines/:id` | see `RouteQuery<'machine'>` | `RouteResponse<'machine'>` | machines, rewards, circuit | One machine with rewards and Circuit state |
 | `GET /api/chain/rewards` | see `RouteQuery<'rewards'>` | `RouteResponse<'rewards'>` | rewards | Claimable stock rewards per (machine, track) of a wallet |
 | `GET /api/chain/rewards/tracks` | see `RouteQuery<'rewardTracks'>` | `RouteResponse<'rewardTracks'>` | rewards, admin | Per-track accumulators and frozen state |

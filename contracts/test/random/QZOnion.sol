@@ -9,10 +9,14 @@ library QZOnion {
         return keccak256(abi.encodePacked(x));
     }
 
-    /// @dev `H^times(x)`.
+    /// @dev `H^times(x)`. Hashes in the scratch space, so memory does not grow and `times` can be the production N.
     function hashN(bytes32 x, uint256 times) internal pure returns (bytes32) {
-        for (uint256 i; i < times; ++i) {
-            x = keccak256(abi.encodePacked(x));
+        // forge-lint: disable-next-line(asm-keccak256)
+        assembly ("memory-safe") {
+            for { let i := 0 } lt(i, times) { i := add(i, 1) } {
+                mstore(0x00, x)
+                x := keccak256(0x00, 0x20)
+            }
         }
         return x;
     }

@@ -27,8 +27,16 @@ library QZRoutes {
     uint128 internal constant THIN_POOL_MAX_CHUNK = 0.15 ether;
     uint128 internal constant GME_MAX_CHUNK = 0.015 ether;
 
-    function route(uint8 track) internal pure returns (StockRoute memory r) {
-        r.stock = QZAddresses.stockOf(track);
+    /// @notice The Robinhood mainnet table: stock tokens from `QZAddresses`.
+    function route(uint8 track) internal pure returns (StockRoute memory) {
+        return route(track, QZAddresses.stockOf(track));
+    }
+
+    /// @notice The same table for a chain whose stock tokens live elsewhere (the Robinhood testnet has its own): only
+    ///         `stock` is the caller's, pool parameters and caps are the mainnet ones. `DeployR1` passes the testnet
+    ///         addresses from `QZ_STOCKS`.
+    function route(uint8 track, address stock) internal pure returns (StockRoute memory r) {
+        r.stock = stock;
         r.hooks = address(0);
         r.v3Fee = WETH_USDG_V3_FEE;
         r.maxChunk = uint128(QZConstants.DEFAULT_MAX_CHUNK);

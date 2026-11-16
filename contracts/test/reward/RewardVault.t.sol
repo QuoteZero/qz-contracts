@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {QZRewardVault} from "../../src/reward/QZRewardVault.sol";
 import {IQZRewardVault} from "../../src/interfaces/IQZRewardVault.sol";
@@ -314,16 +315,31 @@ contract RewardVaultTest is Test {
         assertEq(_stock(0).balanceOf(alice), 100);
     }
 
-    function test_T10_blocklistedClaimerFreezesOnlyItsTrack() public {
-        (uint256[] memory ids, uint8[] memory tracks) = _twoTrackBatch();
+    /// Reviewer A I-3 / T10: a claimant whose own transfer fails (here: a blocklisted recipient) must not mark the whole
+    /// track frozen: the vault and the token still work for every other holder.
+    function test_T10_blocklistedClaimerDoesNotFreezeTheTrack() public {
+        _lit(1, alice, 1, 1);
+        _lit(2, bob, 1, 1);
+        _notify(1, 100);
         _stock(1).setBlocked(alice, true);
-        vm.prank(alice);
-        vault.claim(ids, tracks);
-        assertEq(_stock(0).balanceOf(alice), 100);
+
+        vm.recordLogs();
+        _claim(alice, 1, 1);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != IQZRewardVault.TrackFrozen.selector, "no track-wide event");
+        }
         assertEq(_stock(1).balanceOf(alice), 0);
-        assertTrue(vault.trackFrozen(1));
-        assertFalse(vault.trackFrozen(0));
-        assertEq(vault.claimable(2, 1), 100);
+        assertFalse(vault.trackFrozen(1), "one failing recipient is not a frozen track");
+        assertEq(vault.claimable(1, 1), 50, "alice keeps her claim right");
+
+        _claim(bob, 2, 1);
+        assertEq(_stock(1).balanceOf(bob), 50);
+        assertFalse(vault.trackFrozen(1));
+
+        _stock(1).setBlocked(alice, false);
+        _claim(alice, 1, 1);
+        assertEq(_stock(1).balanceOf(alice), 50);
     }
 
     function test_T10_blocklistedVaultFreezesOnlyItsTrack() public {

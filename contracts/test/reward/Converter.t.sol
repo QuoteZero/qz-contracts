@@ -14,6 +14,8 @@ import {QZConstants} from "../../src/lib/QZConstants.sol";
 ///         orders) and a mocked v3 route.
 contract ConverterTest is ConverterFixture {
     uint256 internal constant CAP = 0.05 ether;
+    /// @dev ceil(CAP / 32): the smallest fallback conversion.
+    uint256 internal constant MIN_CHUNK = 0.0015625 ether;
 
     // ───────────── routes ─────────────
 
@@ -219,7 +221,9 @@ contract ConverterTest is ConverterFixture {
         assertEq(conv.trackPot(1), 4);
     }
 
-    function test_openEpoch_nothingToDistributeReverts() public {
+    /// U4.3 (Reviewer A L-2): with nothing to allocate the executor's call is a heartbeat, not a revert (it used to be
+    /// `ZeroAmount`); the dust stays unassigned and nothing is booked.
+    function test_openEpoch_nothingToDistributeIsAnExecutorHeartbeat() public {
         uint8[] memory tr = new uint8[](2);
         tr[0] = 0;
         tr[1] = 1;
@@ -228,8 +232,9 @@ contract ConverterTest is ConverterFixture {
         vm.warp(launchAt + 24 hours);
         _fundPots(1, 0); // 1 wei over 2 tracks: share 0
         vm.prank(executor);
-        vm.expectRevert(IQZErrors.ZeroAmount.selector);
         conv.openEpoch();
+        assertEq(conv.totalTrackPot(), 0);
+        assertEq(conv.lastOpenEpoch(), 0, "no epoch was opened");
     }
 
     function test_openEpoch_nonExecutorRevertsInNormalMode() public {
@@ -855,33 +860,31 @@ contract ConverterTest is ConverterFixture {
         _fbPokes(0);
         uint256 t1 = block.timestamp;
         vm.prank(attacker);
-        conv.convert(0, 0.049 ether, 1, 1, block.timestamp + 1);
+        conv.convert(0, CAP - MIN_CHUNK, 1, 1, block.timestamp + 1);
 
         vm.warp(t1 + 21 hours);
         _fbPokes(0);
         vm.warp(t1 + 24 hours - 3);
         vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(IQZConverter.DailyCapExceeded.selector, uint8(0), 0.05 ether, 0.001 ether)
-        );
-        conv.convert(0, 0.05 ether, 1, 1, block.timestamp + 1);
+        vm.expectRevert(abi.encodeWithSelector(IQZConverter.DailyCapExceeded.selector, uint8(0), CAP, MIN_CHUNK));
+        conv.convert(0, CAP, 1, 1, block.timestamp + 1);
         vm.prank(attacker);
-        conv.convert(0, 0.001 ether, 1, 1, block.timestamp + 1);
-        assertEq(conv.fallbackSpentToday(0), 0.05 ether);
+        conv.convert(0, MIN_CHUNK, 1, 1, block.timestamp + 1);
+        assertEq(conv.fallbackSpentToday(0), CAP);
 
-        // the 0.049 entry leaves the window exactly 24 h after it was made
+        // the first entry leaves the window exactly 24 h after it was made
         vm.warp(t1 + 24 hours);
-        assertEq(conv.fallbackSpentToday(0), 0.001 ether);
+        assertEq(conv.fallbackSpentToday(0), MIN_CHUNK);
         vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(IQZConverter.DailyCapExceeded.selector, uint8(0), 0.05 ether, 0.049 ether)
-        );
-        conv.convert(0, 0.05 ether, 1, 1, block.timestamp + 1);
+        vm.expectRevert(abi.encodeWithSelector(IQZConverter.DailyCapExceeded.selector, uint8(0), CAP, CAP - MIN_CHUNK));
+        conv.convert(0, CAP, 1, 1, block.timestamp + 1);
         vm.prank(attacker);
-        conv.convert(0, 0.049 ether, 1, 1, block.timestamp + 1);
+        conv.convert(0, CAP - MIN_CHUNK, 1, 1, block.timestamp + 1);
     }
 
-    function test_fallback_capRingFullRevertsInsteadOfEvicting() public {
+    /// U4.3: the minimum chunk (`cap / 32`) makes the ring fill only when the cap is spent, so the daily-cap check
+    /// fires first and `CapRingFull` stays a guard. 32 minimum chunks spend exactly the cap.
+    function test_fallback_32MinimumChunksSpendExactlyTheCap() public {
         uint8[] memory tr = new uint8[](1);
         tr[0] = 0;
         _lightTracks(tr);
@@ -891,12 +894,12 @@ contract ConverterTest is ConverterFixture {
         _fbPokes(0);
         vm.startPrank(attacker);
         for (uint256 i; i < 32; ++i) {
-            conv.convert(0, 1e14, 1, 1, block.timestamp + 1);
+            conv.convert(0, MIN_CHUNK, 1, 1, block.timestamp + 1);
         }
-        vm.expectRevert(abi.encodeWithSelector(QZConverter.CapRingFull.selector, uint8(0)));
-        conv.convert(0, 1e14, 1, 1, block.timestamp + 1);
+        vm.expectRevert(abi.encodeWithSelector(IQZConverter.DailyCapExceeded.selector, uint8(0), MIN_CHUNK, 0));
+        conv.convert(0, MIN_CHUNK, 1, 1, block.timestamp + 1);
         vm.stopPrank();
-        assertEq(conv.fallbackSpentToday(0), 32e14);
+        assertEq(conv.fallbackSpentToday(0), CAP);
     }
 
     /// A swap whose average price clears the 97% floor can end at a marginal price well below it. With 2.4% average

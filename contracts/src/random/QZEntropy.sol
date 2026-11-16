@@ -350,7 +350,10 @@ contract QZEntropy is IQZEntropy {
             bool stalled;
             while (budget != 0 && start + off < end) {
                 uint64 ep = it.epoch > carry ? uint64(it.epoch) : carry;
-                if (ep != poolEpoch) {
+                // An open merge (saved by an earlier call that ran out of allowance, whether it started at an epoch
+                // change or at pool exhaustion) is finished before any draw: a draw from a half-merged pool would
+                // make the result depend on how the callers sliced `processQueue`.
+                if (_merge.active || ep != poolEpoch) {
                     (bool merged, uint256 used) = _mergeReturns(ep, mergeLeft);
                     mergeLeft = used >= mergeLeft ? 0 : mergeLeft - used;
                     if (!merged) {

@@ -113,6 +113,10 @@ test('deployment validator', () => {
 test('deployment validator checks optional spokes', () => {
   const spoke = { eid: 30339, machine: addr(50), token: addr(51) };
   assert.deepEqual(parseDeployment({ ...sample(), spokes: { '57073': spoke } }).spokes, { '57073': spoke });
+  const withBlock = { ...spoke, startBlock: 61000000 };
+  assert.deepEqual(parseDeployment({ ...sample(), spokes: { '57073': withBlock } }).spokes, { '57073': withBlock });
+  assert.throws(() => parseDeployment({ ...sample(), spokes: { '57073': { ...spoke, startBlock: -1 } } }), /startBlock/);
+  assert.throws(() => parseDeployment({ ...sample(), spokes: { '57073': { ...spoke, startBlock: 1.5 } } }), /startBlock/);
   assert.throws(() => parseDeployment({ ...sample(), spokes: 42 }), /spokes: object/);
   assert.throws(() => parseDeployment({ ...sample(), spokes: null }), /spokes: object/);
   assert.throws(() => parseDeployment({ ...sample(), spokes: [] }), /spokes: object/);

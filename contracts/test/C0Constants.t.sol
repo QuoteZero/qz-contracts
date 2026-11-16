@@ -164,8 +164,8 @@ contract C0ConstantsTest is Test {
         assertEq(C.MAX_UNITS_PER_MESSAGE, 10);
         assertEq(C.OFT_SHARED_DECIMALS, 6);
         assertEq(C.LZ_CONFIRMATIONS, 30);
-        assertEq(C.GAS_ONFT_HOME_TO_SPOKE, 100_000);
-        assertEq(C.GAS_ONFT_SPOKE_TO_HOME, 150_000);
+        assertEq(C.GAS_ONFT_HOME_TO_SPOKE, 120_000);
+        assertEq(C.GAS_ONFT_SPOKE_TO_HOME, 190_000);
         assertEq(C.GAS_OFT_HOME_TO_SPOKE, 100_000);
         assertEq(C.GAS_OFT_SPOKE_TO_HOME, 1_200_000);
         assertEq(C.LZ_REQUIRED_DVN_COUNT + C.LZ_OPTIONAL_DVN_THRESHOLD, 3); // 3 attestations per message

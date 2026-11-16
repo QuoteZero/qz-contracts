@@ -11,7 +11,7 @@ import {StockRoute} from "../../src/lib/QZTypes.sol";
 /// @notice The ten-route table the testnet deployment feeds to `QZConverter.setRoute`. The mainnet table is pinned by hash (the
 ///         pool parameters and the ten stock addresses); a testnet table differs only in the stock addresses.
 contract QZRoutesTableTest is Test {
-    bytes32 internal constant MAINNET_TABLE_HASH = 0xef65eb6478ac4e243b53fd68202ee5a9efe774b3ac0cb44de54d98aa1e93e205;
+    bytes32 internal constant MAINNET_TABLE_HASH = 0x0b5c5be2d13abc8b22d841005ac71f8125e70675a62f11d7d783cd31f65894a2;
 
     function _mainnetTable() internal pure returns (StockRoute[] memory rs) {
         rs = new StockRoute[](C.TRACK_COUNT);

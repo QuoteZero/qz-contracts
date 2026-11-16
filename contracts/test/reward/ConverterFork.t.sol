@@ -90,7 +90,7 @@ contract ConverterForkTest is RobinhoodFork {
         assertEq(IStockMeta(QZAddresses.USDG).decimals(), 6);
     }
 
-    function _deploy() internal {
+    function _deploy(uint8 overrideTrack, StockRoute memory overrideRoute) internal {
         vm.deal(alice, 1 ether);
         machine = new MockMachine();
         hook = new ForkPot(QZAddresses.WETH);
@@ -121,7 +121,7 @@ contract ConverterForkTest is RobinhoodFork {
         assertEq(address(conv), predicted);
         vm.startPrank(owner);
         for (uint8 t; t < 10; ++t) {
-            conv.setRoute(t, QZRoutes.route(t));
+            conv.setRoute(t, t == overrideTrack ? overrideRoute : QZRoutes.route(t));
         }
         conv.sealRoutes();
         vm.stopPrank();
@@ -131,10 +131,14 @@ contract ConverterForkTest is RobinhoodFork {
     /// so each test forks the latest block and stays short. Floors (97% of the v3 TWAP and of the median v4 quote,
     /// `minOut = 1`) are live; the stock must land in the vault and be claimable.
     function _convertTrack(uint8 t) internal {
-        _deploy();
+        _convertRoute(t, QZRoutes.route(t));
+    }
+
+    function _prepare(uint8 t, StockRoute memory r) internal returns (uint256 pot) {
+        _deploy(t, r);
         machine.set(100 + t, alice, 1, t, false);
         vault.onHardwire(100 + t);
-        uint256 pot = 10 ether;
+        pot = 10 ether;
         // `deal` probes dozens of slots over RPC and outlives the public node's state window; WETH keeps balances at slot 51
         vm.store(QZAddresses.WETH, keccak256(abi.encode(address(hook), uint256(51))), bytes32(pot));
         assertEq(IERC20(QZAddresses.WETH).balanceOf(address(hook)), pot, "weth slot");
@@ -147,26 +151,10 @@ contract ConverterForkTest is RobinhoodFork {
         }
         vm.prank(executor);
         conv.openEpoch();
+    }
 
-        StockRoute memory r = QZRoutes.route(t);
-        if (r.poolFee >= 30_000) {
-            // MSTR: the 3% pool fee alone uses the whole 3% gross budget, so no chunk can clear the floor. The track
-            // reverts BelowFloor and its pot stays in the converter.
-            vm.prank(executor);
-            try conv.convert(t, r.maxChunk, 1, 1, block.timestamp + 1) {
-                fail();
-            } catch (bytes memory err) {
-                assertEq(bytes4(err), IQZConverter.BelowFloor.selector);
-            }
-            vm.prank(executor);
-            try conv.convert(t, 1e12, 1, 1, block.timestamp + 1) {
-                fail();
-            } catch (bytes memory err) {
-                assertEq(bytes4(err), IQZConverter.BelowFloor.selector);
-            }
-            assertEq(conv.trackPot(t), pot, "pot stays");
-            return;
-        }
+    function _convertRoute(uint8 t, StockRoute memory r) internal {
+        _prepare(t, r);
         vm.prank(executor);
         conv.convert(t, r.maxChunk, 1, 1, block.timestamp + 1);
         uint256 got = vault.totalNotified(t);
@@ -219,6 +207,38 @@ contract ConverterForkTest is RobinhoodFork {
 
     function test_fork_convert_MSTR() public {
         _convertTrack(8);
+    }
+
+    /// The pool of the MSTR route is the 0.25% pool, hookless; its id is the one DexScreener lists.
+    function test_fork_MSTR_routeIsThe025PctPool() public pure {
+        StockRoute memory r = QZRoutes.route(8);
+        assertEq(r.poolFee, 2500);
+        assertEq(r.tickSpacing, 25);
+        assertEq(r.hooks, address(0));
+        (address c0, address c1) = QZAddresses.USDG < r.stock ? (QZAddresses.USDG, r.stock) : (r.stock, QZAddresses.USDG);
+        bytes32 id = keccak256(abi.encode(c0, c1, r.poolFee, r.tickSpacing, r.hooks));
+        assertEq(id, 0x319bac87e616a89e241c10aeb8afd4892a852cdd8b373cd9765ecddc40b87cfe, "pool id");
+    }
+
+    /// Why MSTR is not routed through the 3% pool (the one Quotrons uses): the fee alone uses the whole 3% gross budget,
+    /// so no chunk clears the floor and the pot stays in the converter.
+    function test_fork_MSTR_3pctPoolNeverConverts() public {
+        StockRoute memory r = QZRoutes.route(8);
+        (r.poolFee, r.tickSpacing, r.maxChunk) = (30_000, 600, 0.15 ether);
+        uint256 pot = _prepare(8, r);
+        vm.prank(executor);
+        try conv.convert(8, r.maxChunk, 1, 1, block.timestamp + 1) {
+            fail();
+        } catch (bytes memory err) {
+            assertEq(bytes4(err), IQZConverter.BelowFloor.selector);
+        }
+        vm.prank(executor);
+        try conv.convert(8, 1e12, 1, 1, block.timestamp + 1) {
+            fail();
+        } catch (bytes memory err) {
+            assertEq(bytes4(err), IQZConverter.BelowFloor.selector);
+        }
+        assertEq(conv.trackPot(8), pot, "pot stays");
     }
 
     function test_fork_convert_SPCX() public {

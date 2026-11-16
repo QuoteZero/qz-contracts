@@ -23,7 +23,8 @@ import {QZConstants} from "../lib/QZConstants.sol";
 ///         by owner: a transfer needs no callback and the new owner simply inherits the unclaimed amount.
 ///
 ///         `claim` is never paused and is isolated per track (T10): a stock that reverts the transfer (paused, blocklisted,
-///         the vault emptied by `adminBurn`) leaves that `(id, track)` unclaimed, raises `TrackFrozen` and does not
+///         the vault emptied by `adminBurn`) leaves that `(id, track)` unclaimed, raises `TrackFrozen` (or `ClaimFailed`
+///         when only the claimant's own transfer fails) and does not
 ///         touch any other pair of the batch. `notify` pulls the stock with `transferFrom` and checks the balance
 ///         delta, so `balanceOf(vault) >= Σ claimable` holds at every `notify` and an earlier `adminBurn` cannot wedge
 ///         the accounting of new rewards.
@@ -148,8 +149,11 @@ contract QZRewardVault is IQZRewardVault {
 
     /// @inheritdoc IQZRewardVault
     /// @dev A pair with nothing to claim is skipped (never reverts): a machine hardwired after the last `notify`
-    ///      has `claimable == 0` and `claim` must not revert for it. A pair whose stock transfer fails is skipped, its
-    ///      state restored, and `TrackFrozen` raised with the revert data; every other pair of the batch still pays.
+    ///      has `claimable == 0` and `claim` must not revert for it. A pair whose stock transfer fails is skipped and
+    ///      its state restored; every other pair of the batch still pays. A failure that is the claimant's own (a
+    ///      blocklisted recipient: the vault can still move `pay` to itself) raises `ClaimFailed` for that pair only;
+    ///      a failure that would hit any recipient (paused token, blocklisted or emptied vault) freezes the track and
+    ///      raises `TrackFrozen` with the revert data.
     function claim(uint256[] calldata ids, uint8[] calldata tracks) external nonReentrant {
         if (ids.length != tracks.length) revert LengthMismatch();
         for (uint256 i; i < ids.length; ++i) {
@@ -165,8 +169,13 @@ contract QZRewardVault is IQZRewardVault {
             (bool ok, bytes memory ret) = _tryTransfer(stockOf(track), msg.sender, pay);
             if (!ok) {
                 _undoPayout(id, track, pay);
-                _frozen[track] = true;
-                emit TrackFrozen(track, ret);
+                (bool vaultCanPay,) = _tryTransfer(stockOf(track), address(this), pay);
+                if (vaultCanPay) {
+                    emit ClaimFailed(id, track, msg.sender, ret);
+                } else {
+                    _frozen[track] = true;
+                    emit TrackFrozen(track, ret);
+                }
                 continue;
             }
             if (_frozen[track]) {

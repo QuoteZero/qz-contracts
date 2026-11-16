@@ -35,9 +35,11 @@ import {QZConstants} from "../lib/QZConstants.sol";
 ///         Draw pool of effective epoch E = pool left by the previous draws + all buffered returns stamped <= E,
 ///         appended in ascending machineId order (an order that does not depend on arrival or `processQueue` slicing).
 ///         Returns stamped > E wait in the buffer. So inputs of E are fixed when E closes, before `r_E` is public.
-///         The merge of the buffer into the pool is resumable and spends at most `MERGE_BUDGET` work units per call
-///         (about 5M gas): a holder who dissolves thousands of drawn tickets cannot make one `processQueue` call exceed
-///         the block gas limit, he can only make the draw of that epoch take a few more calls.
+///         The merge of the buffer into the pool is resumable and `processQueue(max)` spends at most
+///         `MERGE_BUDGET x (1 + max / MERGE_DRAWS_PER_SLICE)` work units on it (about 2.5M gas per slice, so a call with
+///         `max < 64`, such as the one inside `QZCore.hardwire`, merges at most about 2.5M gas): a holder who
+///         dissolves thousands of drawn tickets cannot make one `processQueue` call exceed the block gas limit, he can
+///         only make the draw of that epoch take a few more calls.
 ///
 /// Exhaustion. When the pool of E runs dry in the middle of its queue (zombies and live tickets outnumber the
 ///         machines), the buffer is merged again with the same cutoff `<= E`: that takes in the machines of the
@@ -117,10 +119,12 @@ contract QZEntropy is IQZEntropy {
     /// @dev Bitmap words to cover machine ids 1..TOTAL_MACHINES.
     uint256 private constant BITMAP_WORDS = QZConstants.TOTAL_MACHINES / 256 + 1;
     /// @dev Merge work units: 1 per buffered machine skipped (one cold SLOAD, ~2.3k gas), `MERGE_APPEND_COST` per
-    ///      machine appended to the pool (a fresh pool slot, ~25k gas). `processQueue(max)` may spend `MERGE_BUDGET`
-    ///      units per unit of `max`, at most `MERGE_MAX_SLICES` of them: `max = 1` is about 5M gas, a full buffer of
-    ///      all machines needs 24 slices, so a caller that asks for many draws gets the whole merge in one call.
-    uint256 private constant MERGE_BUDGET = 2048;
+    ///      machine appended to the pool (a fresh pool slot, ~25k gas). `processQueue(max)` may spend one slice of
+    ///      `MERGE_BUDGET` units (about 2.5M gas), plus one more per `MERGE_DRAWS_PER_SLICE` draws it was asked for,
+    ///      at most `MERGE_MAX_SLICES`: the merge work grows with the draws the caller pays for. A full buffer of all
+    ///      machines needs 49 slices, so a caller that asks for thousands of draws gets the whole merge in one call.
+    uint256 private constant MERGE_BUDGET = 1024;
+    uint256 private constant MERGE_DRAWS_PER_SLICE = 64;
     uint256 private constant MERGE_MAX_SLICES = 64;
     uint256 private constant MERGE_APPEND_COST = 11;
     bytes32 private constant LOCK_SLOT = 0x4c6f636b5a45745261636b536c6f7451555a45726f456e74726f7079000000a1;
@@ -333,7 +337,7 @@ contract QZEntropy is IQZEntropy {
     /// @inheritdoc IQZEntropy
     function processQueue(uint256 max) external nonReentrant returns (uint256 processed) {
         uint256 budget = max;
-        uint256 mergeLeft = (max > MERGE_MAX_SLICES ? MERGE_MAX_SLICES : max) * MERGE_BUDGET;
+        uint256 mergeLeft = _mergeAllowance(max);
         uint256 itemCount = _items.length;
         uint256 idx = _itemIdx;
         uint256 off = _offset;
@@ -456,6 +460,13 @@ contract QZEntropy is IQZEntropy {
         _retStamp[machineId] = uint40(stamp);
         _retBits[machineId >> 8] |= 1 << (machineId & 255);
         ++_retCount;
+    }
+
+    /// @dev Merge work units a `processQueue(max)` call may spend: one slice plus one per `MERGE_DRAWS_PER_SLICE`
+    ///      draws asked for, at most `MERGE_MAX_SLICES`.
+    function _mergeAllowance(uint256 max) private pure returns (uint256) {
+        uint256 slices = 1 + max / MERGE_DRAWS_PER_SLICE;
+        return (slices > MERGE_MAX_SLICES ? MERGE_MAX_SLICES : slices) * MERGE_BUDGET;
     }
 
     /// @dev Append every buffered return stamped <= `limit` to the pool in ascending machineId order, spending at most

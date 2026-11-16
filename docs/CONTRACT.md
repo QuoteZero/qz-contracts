@@ -84,8 +84,9 @@ a new ABI event without a row fails `tsc`).
 | QZConverter | RoutesSealed | - | Owner seals the routes (one-time, irreversible). | `chain.converter_config` | admin |
 | QZConverter | Unpaused | address by | Pauser (the single owner EOA) calls unpause(). | `chain.pauses` | rewards, admin |
 | QZRewardVault | Claimed | uint256 indexed id, uint8 indexed track, address indexed to, uint256 amount | A machine owner claims stock tokens for (machine, track). | `chain.reward_claims` | rewards, history |
+| QZRewardVault | ClaimFailed | uint256 indexed id, uint8 indexed track, address indexed to, bytes reason | One claimant's own transfer failed (for example a blocklisted recipient) while the vault can still pay others; the track is not frozen and the claim right is kept. | `chain.reward_claims` | rewards |
 | QZRewardVault | RewardNotified | uint8 indexed track, uint256 amount, uint256 accPerWeight | Converter delivers stock tokens for a track; the per-weight accumulator grows. | `chain.reward_notifications` | rewards |
-| QZRewardVault | TrackFrozen | uint8 indexed track, bytes reason | A stock token blocked a transfer: only that track is frozen, `reason` is the revert data. | `chain.reward_tracks` | rewards, admin |
+| QZRewardVault | TrackFrozen | uint8 indexed track, bytes reason | The vault cannot move a track's stock to anyone (paused token, blocked or emptied vault): only that track is frozen, `reason` is the revert data. | `chain.reward_tracks` | rewards, admin |
 | QZRewardVault | TrackThawed | uint8 indexed track | A later transfer on a frozen track succeeded: the track is claimable again. | `chain.reward_tracks` | rewards, admin |
 | QZCircuit | CircuitClaimed | uint256 indexed id, uint256 indexed week, address indexed to, uint256 amount | A completer claims its WETH share for a week. | `chain.circuit_claims` | circuit, history |
 | QZCircuit | CircuitCompleted | uint256 indexed id, uint256 indexed week | Both round trips are done in a week: the machine counts for that week. | `chain.circuit_completions` | circuit, history |

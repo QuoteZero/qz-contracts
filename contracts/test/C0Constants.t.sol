@@ -138,7 +138,10 @@ contract C0ConstantsTest is Test {
     function test_timesAndConverter() public pure {
         assertEq(C.EPOCH_DURATION, 120);
         assertEq(C.REVEAL_ROLLOVER, 3600);
-        assertEq(C.ONION_LENGTH, 365 days / C.EPOCH_DURATION);
+        assertEq(C.ONION_LENGTH, 2_630_160);
+        assertEq(C.ONION_LENGTH, 3653 days / C.EPOCH_DURATION);
+        // One link per epoch covers 10 years, leap days included (any 10 calendar years span at most 3653 days).
+        assertGe(C.ONION_LENGTH * C.EPOCH_DURATION, 3653 days);
         assertEq(C.FIRST_OPEN_EPOCH_DELAY, 24 hours);
         assertEq(C.OPEN_EPOCH_INTERVAL, 60);
         assertEq(C.CONVERT_FLOOR_BPS, 9700);

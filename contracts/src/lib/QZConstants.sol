@@ -138,8 +138,8 @@ library QZConstants {
     uint64 internal constant EPOCH_DURATION = 120;
     /// @dev §4.3 step 5: a missing `reveal(e)` after 1 hour rolls the queue to the next open epoch.
     uint64 internal constant REVEAL_ROLLOVER = 1 hours;
-    /// @dev §4.3 step 1: onion length N ~ 1 year of epochs: 365 days / 120 s.
-    uint256 internal constant ONION_LENGTH = 262_800;
+    /// @dev §4.3 step 1: onion length N = 3653 days / 120 s = 2 630 160 links (10 years, leap days included).
+    uint256 internal constant ONION_LENGTH = 3653 days / EPOCH_DURATION;
 
     // ───────────────────────────── §2.5 / §3.2 converter ─────────────────────────────
 

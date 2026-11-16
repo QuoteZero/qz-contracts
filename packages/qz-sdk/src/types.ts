@@ -20,6 +20,8 @@ export interface ChainStatus {
   indexedBlock: number;
   headBlock: number;
   indexedAt: number;
+  /** Unix seconds on the chain's own clock (timestamp of the node head at the last poll). Phases and weeks run on it; the browser's clock can differ on a forked or warped chain. */
+  chainTime: number;
   phase: PhaseName;
   launchAt: number | null;
   buysPaused: boolean;

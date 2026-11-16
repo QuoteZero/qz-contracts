@@ -28,8 +28,9 @@ import {QZPriceMath, ISwapRouter02Min, IUniswapV3FactoryMin} from "./QZPriceMath
 ///         of the track's sealed route.
 ///
 ///         Floors, both on-chain, the caller's `minOut` can only raise them:
-///         - leg 1: `97% x TWAP(10 min)` of the v3 WETH/USDG pool, net of the v3 fee.
-///         - leg 2: `97% x median` of this contract's own observations of the v4 pool price, net of the pool fee.
+///         - leg 1: `97% x TWAP(10 min)` of the v3 WETH/USDG pool. Gross: the v3 fee counts inside the 3%.
+///         - leg 2: `97% x median` of this contract's own observations of the v4 pool price. Gross: the pool's LP fee
+///           counts inside the 3%, so a 3% pool (MSTR) never converts.
 ///           The v4 pool has no oracle, so keepers record observations with `poke`:
 ///           normal mode: keeper only, median of >= 9 keeper observations in the last 30 min;
 ///           fallback mode (the keeper or the executor silent for more than 24 h): `poke` and `convert` are open to
@@ -38,10 +39,15 @@ import {QZPriceMath, ISwapRouter02Min, IUniswapV3FactoryMin} from "./QZPriceMath
 ///           loses at most that cap per day and track.
 ///         `convert` also reverts when the pool spot price deviates more than 3% from that median.
 ///
-///         C5 decisions where the spec is silent: the 97% floor applies to the price net of the pool's LP fee (the
-///         fee tiers of the stock pools run from 0.212% to 3%, so a floor that ignored the fee would make the 3% tier
-///         unconvertible); `owner`, `keeper`, `executor` and `pauser` are immutable; the liveness clocks of both
-///         roles start at `launchAt` (keeper) and `launchAt + 24 h` (executor, the first allowed `openEpoch`).
+///         C5 decisions where the spec is silent: the 97% floor is gross, it does not add the LP fee on top (the fee
+///         tiers of the stock pools run from 0.212% to 3%, so the fee and the price impact share one 3% budget);
+///         `owner`, `keeper`, `executor` and `pauser` are immutable; the liveness clocks of both roles start at
+///         `launchAt` (keeper) and `launchAt + 24 h` (executor, the first allowed `openEpoch`).
+///
+///         U4.3 review fixes: the executor's `openEpoch` with nothing to allocate (no fresh WETH, or only relics lit)
+///         succeeds as a heartbeat, so a quiet day is not a dead executor; a fallback conversion must spend at least
+///         `cap / 32` so that 32 live slots mean the cap is spent; `setRoute` refuses hooked pools and limits above the
+///         spec values.
 contract QZConverter is IQZConverter, IUnlockCallback {
     using SafeERC20 for IERC20;
     using StateLibrary for IPoolManager;
@@ -185,7 +191,10 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         if (track >= TRACKS) revert BadTrack(track);
         if (
             route.stock == address(0) || route.stock.code.length == 0 || route.maxChunk == 0
-                || route.fallbackDailyCap == 0
+                || route.fallbackDailyCap == 0 || route.hooks != address(0)
+                || route.maxChunk > QZConstants.DEFAULT_MAX_CHUNK
+                || route.fallbackDailyCap > QZConstants.DEFAULT_FALLBACK_DAILY_CAP
+                || route.fallbackDailyCap > uint256(route.maxChunk) * CAP_SLOTS
         ) {
             revert RouteInvalid(track);
         }
@@ -252,7 +261,10 @@ contract QZConverter is IQZConverter, IUnlockCallback {
     /// @inheritdoc IQZConverter
     /// @dev Executor, or anyone in fallback mode. Distributes every WETH not yet assigned to a track (the pulled pots,
     ///      a Circuit redirect, royalty WETH, last epoch's division remainder, donations) equally over the tracks with
-    ///      `W[t] > 0`, so no track without a standard machine ever gets a share (§2.5).
+    ///      `W[t] > 0`, so no track without a standard machine ever gets a share (§2.5). It reverts `NoLitMachines`
+    ///      only when no machine at all is lit; with only relics lit, or no fresh WETH, there is nothing to allocate:
+    ///      the executor's call then succeeds as a liveness heartbeat and leaves every pot where it is, anyone else
+    ///      gets `ZeroAmount`.
     function openEpoch() external nonReentrant whenNotPaused {
         bool fb = fallbackMode();
         if (!fb && msg.sender != executor) revert NotExecutor(msg.sender);
@@ -273,18 +285,25 @@ contract QZConverter is IQZConverter, IUnlockCallback {
                 ++active;
             }
         }
-        if (active == 0) revert NoLitMachines();
-
-        uint256 fromHook = IQZHook(hook).pullRewardPot();
-        uint256 fromCurve = IQZCurve(curve).pullRewardPot();
-        uint256 fromCircuit;
-        if (circuit != address(0) && IQZCircuit(circuit).redirected()) {
-            fromCircuit = IQZCircuit(circuit).pullCircuitPot();
+        uint256 share;
+        if (active != 0) {
+            uint256 fromHook = IQZHook(hook).pullRewardPot();
+            uint256 fromCurve = IQZCurve(curve).pullRewardPot();
+            uint256 fromCircuit;
+            if (circuit != address(0) && IQZCircuit(circuit).redirected()) {
+                fromCircuit = IQZCircuit(circuit).pullCircuitPot();
+            }
+            emit PotsPulled(fromHook, fromCurve, fromCircuit);
+            share = (IERC20(weth).balanceOf(address(this)) - totalTrackPot) / active;
+        } else if (IQZRewardVault(vault).relicCount() == 0) {
+            revert NoLitMachines();
         }
-        emit PotsPulled(fromHook, fromCurve, fromCircuit);
-
-        uint256 share = (IERC20(weth).balanceOf(address(this)) - totalTrackPot) / active;
-        if (share == 0) revert ZeroAmount();
+        if (share == 0) {
+            if (msg.sender != executor) revert ZeroAmount();
+            _lastExecutorAction = uint64(block.timestamp);
+            _leaveFallbackIfNeeded();
+            return;
+        }
         for (uint8 t; t < TRACKS; ++t) {
             if (mask & (1 << t) != 0) trackPot[t] += share;
         }
@@ -489,6 +508,10 @@ contract QZConverter is IQZConverter, IUnlockCallback {
             }
         }
         if (spent + wethIn > cap) revert DailyCapExceeded(track, wethIn, cap > spent ? cap - spent : 0);
+        uint256 minChunk = (cap + CAP_SLOTS - 1) / CAP_SLOTS;
+        if (wethIn < minChunk) revert ChunkBelowFallbackMinimum(wethIn, minChunk);
+        // Unreachable while every live slot holds >= cap / 32 (the sum is then >= cap and the check above fires first);
+        // kept so a later change can never overwrite a live slot.
         if (free == CAP_SLOTS) revert CapRingFull(track);
         ring[free] = (block.timestamp << 128) | wethIn;
     }

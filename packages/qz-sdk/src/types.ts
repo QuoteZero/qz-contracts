@@ -141,6 +141,11 @@ export interface CircuitLeaderboardEntry {
   rank: number;
   machineId: number;
   owner: Address;
+  /** 1..4 for standard machines, 0 for relics. */
+  tier: number;
+  relic: boolean;
+  /** 0..9, index into TRACKS (0 for relics). */
+  track: number;
   flags: number;
   completed: boolean;
   claimable: Wei;

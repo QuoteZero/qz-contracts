@@ -48,9 +48,9 @@ export const routes = {
   ),
   machines: route<
     '/machines',
-    { owner?: string; tier?: number; track?: number; relic?: boolean; limit?: number; cursor?: string },
+    { owner?: string; tier?: number; track?: number; relic?: boolean; hardwired?: boolean; limit?: number; cursor?: string },
     MachinesResponse
-  >('/machines', ['machines'], 'Machine gallery, filterable by owner, tier, track, relic'),
+  >('/machines', ['machines'], 'Machine gallery, filterable by owner, tier, track, relic, hardwired'),
   machine: route<'/machines/:id', {}, MachineDetail>('/machines/:id', ['machines', 'rewards', 'circuit'], 'One machine with rewards and Circuit state'),
   rewards: route<'/rewards', { owner: string }, RewardsResponse>(
     '/rewards',

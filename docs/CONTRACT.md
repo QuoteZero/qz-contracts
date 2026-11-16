@@ -223,7 +223,7 @@ price, hook flags).
 | `HOOK_FLAGS` | `10436` | §5.1 QZHook: beforeInitialize, beforeAddLiquidity, beforeSwap, afterSwap + afterSwap return delta. |
 | `EPOCH_DURATION` | `120` | §4.3 step 2: epoch = 2 minute window on `block.timestamp`. |
 | `REVEAL_ROLLOVER` | `3600` | §4.3 step 5: a missing `reveal(e)` after 1 hour rolls the queue to the next open epoch. |
-| `ONION_LENGTH` | `262800` | §4.3 step 1: onion length N ~ 1 year of epochs: 365 days / 120 s. |
+| `ONION_LENGTH` | `2630160` | §4.3 step 1: onion length N = 3653 days / 120 s = 2 630 160 links (10 years, leap days included). |
 | `FIRST_OPEN_EPOCH_DELAY` | `86400` | §2.5: first `openEpoch()` is allowed 24 h after `launchAt`. |
 | `OPEN_EPOCH_INTERVAL` | `60` | §2.5: later `openEpoch()` interval 60 s (Quotrons style). |
 | `CONVERT_FLOOR_BPS` | `9700` | §3.2 leg 1: `minUsdgOut >= 97% x TWAP 10 min` of the v3 WETH/USDG pool. |

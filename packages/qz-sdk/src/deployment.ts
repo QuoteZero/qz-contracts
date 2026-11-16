@@ -18,7 +18,7 @@ export interface Deployment {
   /** v4 pool id after graduation. */
   poolId?: `0x${string}`;
   /** Spoke chains (R2): chain id -> adapter/oft addresses. */
-  spokes?: Record<string, { eid: number; machine: `0x${string}`; token: `0x${string}` }>;
+  spokes?: Record<string, { eid: number; machine: `0x${string}`; token: `0x${string}`; startBlock?: number }>;
 }
 
 const ADDR = /^0x[0-9a-fA-F]{40}$/;
@@ -69,8 +69,9 @@ export function parseDeployment(input: unknown): Deployment {
         if (!Number.isInteger(e.eid) || (e.eid as number) <= 0) errors.push(`${where}.eid: positive integer required`);
         addr(e.machine, `${where}.machine`);
         addr(e.token, `${where}.token`);
+        if (e.startBlock !== undefined && (!Number.isInteger(e.startBlock) || (e.startBlock as number) < 0)) errors.push(`${where}.startBlock: non-negative integer required`);
         for (const k of Object.keys(e)) {
-          if (k !== 'eid' && k !== 'machine' && k !== 'token') errors.push(`${where}.${k}: unknown field`);
+          if (k !== 'eid' && k !== 'machine' && k !== 'token' && k !== 'startBlock') errors.push(`${where}.${k}: unknown field`);
         }
       }
     }

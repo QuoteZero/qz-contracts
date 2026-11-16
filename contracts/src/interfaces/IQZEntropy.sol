@@ -59,6 +59,10 @@ interface IQZEntropy is IQZErrors {
     /// @notice Last revealed epoch and its `r`.
     function lastRevealed() external view returns (uint64 epoch, bytes32 r);
     function poolSize() external view returns (uint256);
+
+    /// @notice True while a return merge stopped at its per-call budget: `processQueue` then draws nothing until
+    ///         further calls finish the merge.
+    function mergeInProgress() external view returns (bool);
     /// @notice Machine drawn for `(ticketId, nonce)`, 0 if not drawn yet.
     function machineOf(uint256 ticketId, uint64 nonce) external view returns (uint256);
     function core() external view returns (address);

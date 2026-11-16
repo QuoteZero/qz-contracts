@@ -31,6 +31,8 @@ interface IQZConverter is IQZPausable {
     // ───────────── errors ─────────────
 
     error NoLitMachines();
+    /// @notice A fallback conversion below `ceil(fallbackDailyCap / 32)`: dust would fill the 32-slot cap ring.
+    error ChunkBelowFallbackMinimum(uint256 wethIn, uint256 minimum);
     error TooEarly(uint64 notBefore);
     error RoutesAlreadySealed();
     error RoutesNotSealed();

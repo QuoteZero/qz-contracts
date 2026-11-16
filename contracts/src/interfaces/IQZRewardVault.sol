@@ -21,6 +21,9 @@ interface IQZRewardVault is IQZErrors {
     event Claimed(uint256 indexed id, uint8 indexed track, address indexed to, uint256 amount);
     /// @notice A track's stock reverted (paused, blocklisted, adminBurn): that track is frozen, others unaffected (T10).
     event TrackFrozen(uint8 indexed track, bytes reason);
+    /// @notice A claimant's own transfer failed (for example a blocklisted recipient) while the vault can still pay
+    ///         others: only that `(id, track)` is skipped, the track is not frozen.
+    event ClaimFailed(uint256 indexed id, uint8 indexed track, address indexed to, bytes reason);
     event TrackThawed(uint8 indexed track);
 
     // ───────────── errors ─────────────

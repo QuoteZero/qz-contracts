@@ -11,8 +11,8 @@ import {QZConstants} from "../lib/QZConstants.sol";
 ///
 /// Hash onion. `onionRoot = H^N(s)` with `H = keccak256` over one 32 byte word. The k-th reveal (k = 1, 2, ...) is
 ///         `r_k = H^(N-k)(s)`, verified by `keccak256(r_k) == previous r` (`r_0 = onionRoot`). Epochs are revealed
-///         strictly in order, one link per epoch, starting at the epoch of deployment, so N = 262 800 links last one
-///         year (`QZConstants.ONION_LENGTH`). `seed[e] = keccak256(abi.encode(r_e, e))` (two 32 byte words).
+///         strictly in order, one link per epoch, starting at the epoch of deployment, so N = 2 630 160 links last
+///         3653 days, 10 years or more (`QZConstants.ONION_LENGTH`). `seed[e] = keccak256(abi.encode(r_e, e))` (two 32 byte words).
 ///
 /// Queues. Tickets born in epoch b join the queue of b in call order. Epochs close at `(b + 1) * 120`. The queue of
 ///         b is drawn with `seed[b]` once `reveal(b)` lands within 1 hour of the close (`currentEpoch() < b + 31`).

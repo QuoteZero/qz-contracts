@@ -30,7 +30,7 @@ import {QZPriceMath, ISwapRouter02Min, IUniswapV3FactoryMin} from "./QZPriceMath
 ///         Floors, both on-chain, the caller's `minOut` can only raise them:
 ///         - leg 1: `97% x TWAP(10 min)` of the v3 WETH/USDG pool. Gross: the v3 fee counts inside the 3%.
 ///         - leg 2: `97% x median` of this contract's own observations of the v4 pool price. Gross: the pool's LP fee
-///           counts inside the 3%, so a 3% pool (MSTR) never converts.
+///           counts inside the 3%, so a 3% pool never converts.
 ///           The v4 pool has no oracle, so keepers record observations with `poke`:
 ///           normal mode: keeper only, median of >= 9 keeper observations in the last 30 min;
 ///           fallback mode (the keeper or the executor silent for more than 24 h): `poke` and `convert` are open to

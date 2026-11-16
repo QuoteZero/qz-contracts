@@ -10,7 +10,9 @@ import {QZConstants} from "../lib/QZConstants.sol";
 ///         The v4 USDG/stock pool of each track (hooks = none, fee, tickSpacing) is the one the Quotrons converter
 ///         `0x24e62Dd5C7058CC41ad9c5375C137460ea1Da2FE` uses on Robinhood Chain, read on chain with
 ///         `routes(uint256)` on 16 Nov 2026 and re-mapped to the QuoteZero track order (NVDA, AAPL, TSLA, GME, SPY, PLTR,
-///         NFLX, RDDT, MSTR, SPCX). Leg 1 is the v3 WETH/USDG 0.01% pool (`wethUsdgFee() == 100` there too).
+///         NFLX, RDDT, MSTR, SPCX), except MSTR (post-review-1, C11): Quotrons routes it through a 3% pool, QuoteZero uses
+///         the hookless 0.25% MSTR/USDG pool (tickSpacing 25) instead. Leg 1 is the v3 WETH/USDG 0.01% pool
+///         (`wethUsdgFee() == 100` there too).
 ///         Chunk and daily-cap sizes are C5's recomputation of SPEC §3.2 point 4 against pool depth
 ///         (`test/reward/ConverterFork.t.sol` prints the measured price impact per track).
 library QZRoutes {
@@ -22,8 +24,9 @@ library QZRoutes {
     ///      (R = L / sqrtP if USDG is currency0, L * sqrtP if currency1; L = in-range liquidity at fork block 115470000;
     ///      WETH ~ $1822), which leaves 3% - fee - 1% for the spot/median gap: 0.3% tiers 1.7%, 1% tiers 1%.
     ///      RDDT (1% tier) R ~ $23.6k: 0.15 WETH ~ $273 ~ 1.2% impact. GME (0.212% tier) R ~ $2.3k: 0.015 WETH ~ $27 ~ 1.2%.
-    ///      MSTR has a 3% tier: the fee alone is the whole budget, so `convert` always reverts `BelowFloor` for it and its
-    ///      pot stays (the 0.15 WETH chunk only bounds the price impact if the route is ever changed before sealing).
+    ///      MSTR: the 3% pool Quotrons uses has a fee that alone is the whole budget, so `convert` reverts `BelowFloor` there.
+    ///      The 0.25% pool (id 0x319bac87e616a89e241c10aeb8afd4892a852cdd8b373cd9765ecddc40b87cfe, ~$1.46M liquidity) leaves
+    ///      the default 0.5 WETH chunk at a small price impact.
     uint128 internal constant THIN_POOL_MAX_CHUNK = 0.15 ether;
     uint128 internal constant GME_MAX_CHUNK = 0.015 ether;
 
@@ -61,8 +64,7 @@ library QZRoutes {
             (r.poolFee, r.tickSpacing) = (10_000, 200); // RDDT
             r.maxChunk = THIN_POOL_MAX_CHUNK;
         } else if (track == 8) {
-            (r.poolFee, r.tickSpacing) = (30_000, 600); // MSTR
-            r.maxChunk = THIN_POOL_MAX_CHUNK;
+            (r.poolFee, r.tickSpacing) = (2500, 25); // MSTR
         } else if (track == 9) {
             (r.poolFee, r.tickSpacing) = (3000, 60); // SPCX
         } else {

@@ -35,6 +35,9 @@ import {QZConstants} from "../lib/QZConstants.sol";
 ///         Draw pool of effective epoch E = pool left by the previous draws + all buffered returns stamped <= E,
 ///         appended in ascending machineId order (an order that does not depend on arrival or `processQueue` slicing).
 ///         Returns stamped > E wait in the buffer. So inputs of E are fixed when E closes, before `r_E` is public.
+///         The merge of the buffer into the pool is resumable and spends at most `MERGE_BUDGET` work units per call
+///         (about 5M gas): a holder who dissolves thousands of drawn tickets cannot make one `processQueue` call exceed
+///         the block gas limit, he can only make the draw of that epoch take a few more calls.
 ///
 /// Exhaustion. When the pool of E runs dry in the middle of its queue (zombies and live tickets outnumber the
 ///         machines), the buffer is merged again with the same cutoff `<= E`: that takes in the machines of the
@@ -113,6 +116,13 @@ contract QZEntropy is IQZEntropy {
     uint64 private constant ROLL_EPOCHS = 1 + QZConstants.REVEAL_ROLLOVER / QZConstants.EPOCH_DURATION;
     /// @dev Bitmap words to cover machine ids 1..TOTAL_MACHINES.
     uint256 private constant BITMAP_WORDS = QZConstants.TOTAL_MACHINES / 256 + 1;
+    /// @dev Merge work units: 1 per buffered machine skipped (one cold SLOAD, ~2.3k gas), `MERGE_APPEND_COST` per
+    ///      machine appended to the pool (a fresh pool slot, ~25k gas). `processQueue(max)` may spend `MERGE_BUDGET`
+    ///      units per unit of `max`, at most `MERGE_MAX_SLICES` of them: `max = 1` is about 5M gas, a full buffer of
+    ///      all machines needs 24 slices, so a caller that asks for many draws gets the whole merge in one call.
+    uint256 private constant MERGE_BUDGET = 2048;
+    uint256 private constant MERGE_MAX_SLICES = 64;
+    uint256 private constant MERGE_APPEND_COST = 11;
     bytes32 private constant LOCK_SLOT = 0x4c6f636b5a45745261636b536c6f7451555a45726f456e74726f7079000000a1;
 
     // ───────────── reveal state ─────────────
@@ -143,8 +153,21 @@ contract QZEntropy is IQZEntropy {
     uint16 private _poolSize = uint16(QZConstants.TOTAL_MACHINES);
     uint64 private _poolEpoch; // epoch whose returns were last merged
     uint64 private _carry; // exhaustion carry: items draw with at least this epoch's seed and pool
-    mapping(uint64 => uint16[]) private _returns; // stamp epoch => returned machines
-    uint64[] private _retStamps; // stamps with a non-empty buffer, unordered
+    /// @dev Return buffer: one bit per machine id (bit set = returned and not yet in the pool) and the epoch stamp of
+    ///      its return. A machine is in the buffer at most once (it left the pool when drawn), so the buffer never
+    ///      holds more than `TOTAL_MACHINES` entries whatever the sequence of dissolves.
+    mapping(uint256 word => uint256) private _retBits;
+    mapping(uint256 => uint40) private _retStamp;
+    uint16 private _retCount;
+
+    /// @dev A merge that ran out of its per-call budget: `cursor` = next machine id to look at, `limit` = the
+    ///      admission cutoff it was started with.
+    struct MergeState {
+        bool active;
+        uint16 cursor;
+        uint40 limit;
+    }
+    MergeState private _merge;
 
     constructor(address core_, address revealer_, bytes32 onionRoot_) {
         if (core_ == address(0) || revealer_ == address(0)) revert ZeroAddress();
@@ -310,6 +333,7 @@ contract QZEntropy is IQZEntropy {
     /// @inheritdoc IQZEntropy
     function processQueue(uint256 max) external nonReentrant returns (uint256 processed) {
         uint256 budget = max;
+        uint256 mergeLeft = (max > MERGE_MAX_SLICES ? MERGE_MAX_SLICES : max) * MERGE_BUDGET;
         uint256 itemCount = _items.length;
         uint256 idx = _itemIdx;
         uint256 off = _offset;
@@ -323,12 +347,22 @@ contract QZEntropy is IQZEntropy {
             while (budget != 0 && start + off < end) {
                 uint64 ep = it.epoch > carry ? uint64(it.epoch) : carry;
                 if (ep != poolEpoch) {
-                    _mergeReturns(ep);
+                    (bool merged, uint256 used) = _mergeReturns(ep, mergeLeft);
+                    mergeLeft = used >= mergeLeft ? 0 : mergeLeft - used;
+                    if (!merged) {
+                        stalled = true;
+                        break;
+                    }
                     poolEpoch = ep;
                 }
                 Step step = _step(start + off, _seed[ep]);
                 if (step == Step.Exhausted) {
-                    _mergeReturns(ep);
+                    (bool merged, uint256 used) = _mergeReturns(ep, mergeLeft);
+                    mergeLeft = used >= mergeLeft ? 0 : mergeLeft - used;
+                    if (!merged) {
+                        stalled = true;
+                        break;
+                    }
                     if (_poolSize != 0) continue;
                     if (_dropZombie(start + off)) {
                         --budget;
@@ -419,56 +453,68 @@ contract QZEntropy is IQZEntropy {
     }
 
     function _addReturn(uint64 stamp, uint16 machineId) private {
-        uint16[] storage buf = _returns[stamp];
-        if (buf.length == 0) _retStamps.push(stamp);
-        buf.push(machineId);
+        _retStamp[machineId] = uint40(stamp);
+        _retBits[machineId >> 8] |= 1 << (machineId & 255);
+        ++_retCount;
     }
 
-    /// @dev Append every buffered return stamped <= `limit` to the pool in ascending machineId order.
-    function _mergeReturns(uint64 limit) private {
-        uint256 len = _retStamps.length;
-        if (len == 0) return;
-        uint256[] memory bitmap = new uint256[](BITMAP_WORDS);
-        bool any;
-        for (uint256 i = len; i > 0;) {
-            --i;
-            uint64 stamp = _retStamps[i];
-            if (stamp > limit) continue;
-            uint16[] storage buf = _returns[stamp];
-            uint256 n = buf.length;
-            for (uint256 j; j < n; ++j) {
-                uint256 m = buf[j];
-                bitmap[m >> 8] |= 1 << (m & 255);
-            }
-            any = true;
-            delete _returns[stamp];
-            _retStamps[i] = _retStamps[len - 1];
-            _retStamps.pop();
-            --len;
+    /// @dev Append every buffered return stamped <= `limit` to the pool in ascending machineId order, spending at most
+    ///      `allowance` work units (`used` is what it spent). A merge that reaches the allowance stops and returns
+    ///      false; the next call resumes at the saved machine id with the saved limit, so the final pool order is the
+    ///      same as in one go and a call costs at most what its caller asked for (a merge of every machine in one
+    ///      transaction would exceed the block gas limit). The caller draws only after a merge returned true. A return
+    ///      that arrives while a merge is open is stamped after its limit (the limit is an epoch whose seed is public,
+    ///      so that epoch is closed), so it never enters the open merge.
+    function _mergeReturns(uint64 limit, uint256 allowance) private returns (bool, uint256) {
+        uint256 cursor;
+        uint256 count = _retCount;
+        if (_merge.active) {
+            limit = _merge.limit;
+            cursor = _merge.cursor;
+        } else if (count == 0) {
+            return (true, 0);
         }
-        if (!any) return;
 
         uint256 size = _poolSize;
-        for (uint256 w; w < BITMAP_WORDS; ++w) {
-            uint256 word = bitmap[w];
-            uint256 base = w << 8;
-            while (word != 0) {
-                uint256 low = word & (~word + 1);
-                uint256 bit;
-                // index of the lowest set bit
-                if (low >> 128 != 0) bit += 128;
-                if ((low >> bit) & type(uint64).max == 0) bit += 64;
-                if ((low >> bit) & type(uint32).max == 0) bit += 32;
-                if ((low >> bit) & type(uint16).max == 0) bit += 16;
-                if ((low >> bit) & type(uint8).max == 0) bit += 8;
-                if ((low >> bit) & 0xf == 0) bit += 4;
-                if ((low >> bit) & 0x3 == 0) bit += 2;
-                if ((low >> bit) & 0x1 == 0) bit += 1;
-                _pool[size++] = uint16(base + bit);
-                word ^= low;
+        uint256 units;
+        for (uint256 w = cursor >> 8; w < BITMAP_WORDS; ++w) {
+            uint256 pending = _retBits[w];
+            if (w == cursor >> 8) pending &= type(uint256).max << (cursor & 255);
+            while (pending != 0) {
+                uint256 id = (w << 8) + _lowestBitIndex(pending & (~pending + 1));
+                if (units >= allowance) {
+                    _retCount = uint16(count);
+                    _poolSize = uint16(size);
+                    _merge = MergeState({active: true, cursor: uint16(id), limit: uint40(limit)});
+                    return (false, units);
+                }
+                pending &= pending - 1;
+                if (_retStamp[id] <= limit) {
+                    _pool[size++] = uint16(id);
+                    _retBits[w] &= ~(uint256(1) << (id & 255));
+                    --count;
+                    units += MERGE_APPEND_COST;
+                } else {
+                    ++units;
+                }
             }
         }
+        _retCount = uint16(count);
         _poolSize = uint16(size);
+        if (_merge.active) _merge = MergeState({active: false, cursor: 0, limit: 0});
+        return (true, units);
+    }
+
+    /// @dev Index of the single set bit of `low`.
+    function _lowestBitIndex(uint256 low) private pure returns (uint256 bit) {
+        if (low >> 128 != 0) bit += 128;
+        if ((low >> bit) & type(uint64).max == 0) bit += 64;
+        if ((low >> bit) & type(uint32).max == 0) bit += 32;
+        if ((low >> bit) & type(uint16).max == 0) bit += 16;
+        if ((low >> bit) & type(uint8).max == 0) bit += 8;
+        if ((low >> bit) & 0xf == 0) bit += 4;
+        if ((low >> bit) & 0x3 == 0) bit += 2;
+        if ((low >> bit) & 0x1 == 0) bit += 1;
     }
 
     function _key(uint256 ticketId, uint64 nonce) private pure returns (bytes32) {
@@ -515,6 +561,11 @@ contract QZEntropy is IQZEntropy {
     /// @inheritdoc IQZEntropy
     function poolSize() external view returns (uint256) {
         return _poolSize;
+    }
+
+    /// @inheritdoc IQZEntropy
+    function mergeInProgress() external view returns (bool) {
+        return _merge.active;
     }
 
     /// @inheritdoc IQZEntropy

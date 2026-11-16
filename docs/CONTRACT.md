@@ -239,7 +239,7 @@ price, hook flags).
 | `OFT_SHARED_DECIMALS` | `6` | §5.2 shared decimals 6 (default), local 18 -> bridge minimum 0.000001 QZ. |
 | `LZ_CONFIRMATIONS` | `30` | §5.2 confirmations 30 each way. |
 | `LZ_MSG_TYPE_SEND` | `1` | §5.2 enforced options: msgType SEND = 1 (SEND_AND_CALL = 2 not opened in R1/R2 phase 1). |
-| `GAS_ONFT_HOME_TO_SPOKE` | `100000` | §5.2 enforced lzReceive gas per path. |
+| `GAS_ONFT_HOME_TO_SPOKE` | `120000` | §5.2 enforced lzReceive gas per path. |
 | `RATE_LIMIT_QZ` | `200000000000000000000` | §5.2 rate limiter example: 200 QZ / 1 h per EID and 50 machines / 1 h per EID. [INFERENCE, calibrate on testnet] |
 
 <!-- END GENERATED: constants -->

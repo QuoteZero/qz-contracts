@@ -230,6 +230,9 @@ export const fixtures = {
         "amount": "1000000000000000000",
         "machineId": null,
         "ticketId": null,
+        "peerEid": null,
+        "peerChain": null,
+        "guid": null,
         "detail": "Bought 940.45 QZ"
       }
     ],

@@ -191,7 +191,11 @@ export type HistoryKind =
   | 'reward_claim'
   | 'circuit_hop'
   | 'circuit_claim'
-  | 'transfer';
+  | 'transfer'
+  | 'qz_sent'
+  | 'qz_received'
+  | 'machine_sent'
+  | 'machine_received';
 
 export interface HistoryItem {
   kind: HistoryKind;
@@ -203,6 +207,12 @@ export interface HistoryItem {
   amount: Wei | null;
   machineId: number | null;
   ticketId: number | null;
+  /** Bridge kinds only: the LayerZero endpoint id of the other chain (destination of a send, source of a receive). */
+  peerEid: number | null;
+  /** Bridge kinds only: display name of `peerEid` (Ink, Base, ...). */
+  peerChain: string | null;
+  /** Bridge kinds only: LayerZero message guid; the LayerZero Scan link key. */
+  guid: Hex | null;
   detail: string;
 }
 

@@ -1,0 +1,35 @@
+{
+  "lib/dn404": {
+    "rev": "3397cb11558ac853912ee87871422b6a29c9d346"
+  },
+  "lib/forge-std": {
+    "rev": "77041d2ce690e692d6e03cc812b57d1ddaa4d505"
+  },
+  "lib/layerzero-devtools": {
+    "rev": "6c87e0d9e463539ef7215a31838a7007f25fef15"
+  },
+  "lib/layerzero-devtools-onft-audited": {
+    "rev": "3df40c887ea836f77fe008cacf0f460835141ebb"
+  },
+  "lib/layerzero-v1": {
+    "rev": "a1fb11a3b9c0ac449291816e71eacede4e36613e"
+  },
+  "lib/layerzero-v2": {
+    "rev": "943ce4a2bbac070f838e12c7fd034bca6a281ccf"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "5fd1781b1454fd1ef8e722282f86f9293cacf256"
+  },
+  "lib/solady": {
+    "rev": "acd959aa4bd04720d640bf4e6a5c71037510cc4b"
+  },
+  "lib/solidity-bytes-utils": {
+    "rev": "f4413cd6137b78403e3a1156bee6aceab46b46fa"
+  },
+  "lib/v4-core": {
+    "rev": "e50237c43811bd9b526eff40f26772152a42daba"
+  },
+  "lib/v4-periphery": {
+    "rev": "3779387e5d296f39df543d23524b050f89a62917"
+  }
+}

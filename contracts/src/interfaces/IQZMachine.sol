@@ -6,7 +6,7 @@ import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IQZErrors} from "./IQZCommon.sol";
 
 /// @title IQZMachine
-/// @notice Lit machine: plain ERC-721, ids 1..4444, minted only by `QZCore.hardwire`, never burned (§5.1, I3).
+/// @notice Lit machine: plain ERC-721, ids 1..2222, minted only by `QZCore.hardwire`, never burned (§5.1, I3).
 ///         Separate from the ticket mirror so machine approvals never meet fungible-side logic (§4.1).
 ///         ERC-2981 royalty 5% (4% reward pot + 1% treasury, §1.4), best effort. Traits are fixed by `TRAITS_HASH`.
 ///         Events: ERC-721 `Transfer`, `Approval`, `ApprovalForAll`.
@@ -18,11 +18,11 @@ interface IQZMachine is IERC721Metadata, IERC2981, IQZErrors {
     error MetadataAlreadyFrozen();
     error NonexistentMachine(uint256 machineId);
 
-    /// @notice `QZCore` only. Mints `machineId` (1..4444) once in the contract's lifetime (I3).
+    /// @notice `QZCore` only. Mints `machineId` (1..2222) once in the contract's lifetime (I3).
     function mint(address to, uint256 machineId) external;
 
-    /// @notice `tier` 1..4 = I Ticker .. IV Zero Desk, `track` 0..9, `relic` true for #4441..#4444 (tier 0, track 0).
-    ///         Defined for every id 1..4444, also before the machine is minted.
+    /// @notice `tier` 1..4 = I Ticker .. IV Zero Desk, `track` 0..9, `relic` true for #2221..#2222 (tier 0, track 0).
+    ///         Defined for every id 1..2222, also before the machine is minted.
     function traitsOf(uint256 machineId) external view returns (uint8 tier, uint8 track, bool relic);
     function totalMinted() external view returns (uint256);
     /// @notice keccak256 of metadata/traits.json (unit A0), constructor argument.

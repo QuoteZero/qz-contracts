@@ -6,7 +6,7 @@ import {IQZErrors} from "./IQZCommon.sol";
 /// @title IQZRewardVault
 /// @notice Stock-token reward accounting per machine and track (§2.5, I6). Per-weight accumulator `acc[t]` (scale
 ///         P = 1e36) with `debtP[id][t]` per machineId, not per owner: transferring a machine needs no callback.
-///         Weights: tier I 10, II 15, III 25, IV 40; the 4 relics take 10% of every track's `notify` (2.5% each, unlit
+///         Weights: tier I 10, II 15, III 25, IV 40; the 2 relics take 10% of every track's `notify` (5% each, unlit
 ///         slots fall to the standard machines) and draw from all ten tracks. Claim only at home:
 ///         `QZMachine.ownerOf(id) == msg.sender` (design B, §2.2), the adapter has no claim path.
 ///         `claim` is never paused and is isolated per track (a frozen stock reverts only its own track).

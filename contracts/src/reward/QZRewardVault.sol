@@ -14,7 +14,7 @@ import {QZConstants} from "../lib/QZConstants.sol";
 ///
 ///         Per track `t`: `W[t]` = total weight of the lit standard machines (tier I..IV = 10/15/25/40), `acc[t]` =
 ///         stock units per weight in scale P = 1e36, `carry[t]` = fraction left over from the division (scale P).
-///         The 4 relics take `10% x R / 4` of every `notify` (2.5% per lit relic) and draw from all ten tracks:
+///         The 2 relics take `10% x R / 2` of every `notify` (5% per lit relic) and draw from all ten tracks:
 ///         `relicAcc[t]` / `relicCarry[t]` per relic. Unlit relic slots fall back to the standard machines.
 ///
 ///         A machine enrolled after a `notify` gets nothing from it: standard `debtP = weight x acc[t]` and
@@ -113,7 +113,7 @@ contract QZRewardVault is IQZRewardVault {
 
     /// @inheritdoc IQZRewardVault
     /// @dev Pulls `amount` of the track's stock from the converter (which approved exactly that) and proves the
-    ///      vault received it. The relic share is `amount x 10% x R / 4`, floored; the rest goes to the standard side.
+    ///      vault received it. The relic share is `amount x 10% x R / 2`, floored; the rest goes to the standard side.
     function notify(uint8 track, uint256 amount) external nonReentrant {
         if (msg.sender != converter) revert NotConverter(msg.sender);
         if (track >= TRACKS) revert BadTrack(track);

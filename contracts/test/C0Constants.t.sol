@@ -12,13 +12,13 @@ import {QZCurveMath} from "../src/lib/QZCurveMath.sol";
 contract C0ConstantsTest is Test {
     // §1.3 supply, tiers, weights
     function test_supplyAndTiers() public pure {
-        assertEq(C.TOTAL_SUPPLY, 4444 * C.UNIT);
+        assertEq(C.TOTAL_SUPPLY, 2222 * C.UNIT);
         assertEq(C.TIER_I_COUNT + C.TIER_II_COUNT + C.TIER_III_COUNT + C.TIER_IV_COUNT, C.STANDARD_MACHINES);
         assertEq(C.STANDARD_MACHINES + C.RELIC_COUNT, C.TOTAL_MACHINES);
         assertEq(C.LAST_RELIC_ID, C.TOTAL_MACHINES);
         assertEq(C.FIRST_RELIC_ID, C.STANDARD_MACHINES + 1);
         assertEq(C.LAST_RELIC_ID - C.FIRST_RELIC_ID + 1, C.RELIC_COUNT);
-        // §1.3 "2400/1300/560/180 divisible by 10 tracks, 444 per track"
+        // §1.3 "1200/650/280/90 divisible by 10 tracks, 222 per track"
         assertEq(C.TIER_I_COUNT, C.TIER_I_PER_TRACK * C.TRACK_COUNT);
         assertEq(C.TIER_II_COUNT, C.TIER_II_PER_TRACK * C.TRACK_COUNT);
         assertEq(C.TIER_III_COUNT, C.TIER_III_PER_TRACK * C.TRACK_COUNT);
@@ -29,7 +29,7 @@ contract C0ConstantsTest is Test {
         assertEq(C.MACHINES_PER_TRACK * C.TRACK_COUNT, C.STANDARD_MACHINES);
     }
 
-    // §2.5 integer weights (x10 of 1 / 1.5 / 2.5 / 4), §1.3 total 6470
+    // §2.5 integer weights (x10 of 1 / 1.5 / 2.5 / 4), §1.3 total 3235
     function test_weights() public pure {
         assertEq(C.WEIGHT_TIER_I, 10);
         assertEq(C.WEIGHT_TIER_II, 15);
@@ -40,9 +40,9 @@ contract C0ConstantsTest is Test {
         uint256 total = C.TIER_I_COUNT * C.WEIGHT_TIER_I + C.TIER_II_COUNT * C.WEIGHT_TIER_II + C.TIER_III_COUNT
             * C.WEIGHT_TIER_III + C.TIER_IV_COUNT * C.WEIGHT_TIER_IV;
         assertEq(total, C.TOTAL_STANDARD_WEIGHT);
-        assertEq(total / 10, 6470);
-        assertEq(C.RELIC_SHARE_BPS, 1000); // 10% of each track, 2.5% per relic
-        assertEq(C.RELIC_SHARE_BPS / C.RELIC_COUNT, 250);
+        assertEq(total / 10, 3235);
+        assertEq(C.RELIC_SHARE_BPS, 1000); // 10% of each track, 5% per relic
+        assertEq(C.RELIC_SHARE_BPS / C.RELIC_COUNT, 500);
     }
 
     // §1.4 fee splits
@@ -73,43 +73,47 @@ contract C0ConstantsTest is Test {
 
     // §1.6 curve parameters and their relations
     function test_curveParameters() public pure {
-        assertEq(C.CURVE_SUPPLY, 3555.2e18);
-        assertEq(C.POOL_SUPPLY, 888.8e18);
-        assertEq(C.CURVE_SUPPLY + C.POOL_SUPPLY, C.TOTAL_SUPPLY); // G = 4444 - S
+        assertEq(C.CURVE_SUPPLY, 1777.6e18);
+        assertEq(C.POOL_SUPPLY, 444.4e18);
+        assertEq(C.CURVE_SUPPLY + C.POOL_SUPPLY, C.TOTAL_SUPPLY); // G = 2222 - S
         assertEq(C.CURVE_SUPPLY * 100 / C.TOTAL_SUPPLY, 80); // 80/20
-        assertEq(C.X0, 4 ether);
-        assertEq(C.TARGET_ETH, 12 ether);
+        assertEq(C.X0, 733_333_333_333_333_334); // E / 3 = 0.7333... ETH, rounded up to a whole wei
+        assertEq(C.TARGET_ETH, 2.2 ether);
         assertEq(C.CURVE_K, C.X0 * C.Y0);
     }
 
-    /// @dev Y0 = S^2 / (S - G), rounded UP to the wei (documented in QZConstants).
-    function test_Y0IsCeilOfSSquaredOverSMinusG() public pure {
+    /// @dev Y0 ~ S^2 / (S - G) = 2370.1333...e18. X0 = E/3 is not a whole wei, so Y0 is the round-up that keeps
+    ///      `E = X0 x S / (Y0 - S)` exact: `Y0 = S + S x X0 / E` (documented in QZConstants).
+    function test_Y0IsTheRoundUpThatKeepsETargetExact() public pure {
         uint256 num = C.CURVE_SUPPLY * C.CURVE_SUPPLY;
         uint256 den = C.CURVE_SUPPLY - C.POOL_SUPPLY;
-        assertEq(C.Y0, (num + den - 1) / den);
-        assertGt(num % den, 0); // not exact in wei: 4740.2666...e18
-        assertEq(C.Y0, 4_740_266_666_666_666_666_667);
+        uint256 idealCeil = (num + den - 1) / den;
+        assertGt(num % den, 0); // not exact in wei: 2370.1333...e18
+        assertEq(idealCeil, 2_370_133_333_333_333_333_334);
+        assertGe(C.Y0, idealCeil); // rounded up, never down
+        assertEq(C.Y0 - idealCeil, 538); // 538 wei above the ideal, 2.3e-19 relative
+        assertEq(C.CURVE_SUPPLY % C.TARGET_ETH, 0); // S / E = 808 exactly
+        assertEq(C.Y0, C.CURVE_SUPPLY + C.CURVE_SUPPLY / C.TARGET_ETH * C.X0);
+        assertEq(C.Y0, 2_370_133_333_333_333_333_872);
+        assertEq(3 * C.X0 - C.TARGET_ETH, 2); // X0 = ceil(E / 3)
     }
 
-    /// @dev §1.6 "E = X0 x S / (Y0 - S)": the constant 12 ETH equals the formula within 1 wei.
-    function test_targetEquationHoldsWithin1Wei() public pure {
+    /// @dev §1.6 "E = X0 x S / (Y0 - S)": the constant 2.2 ETH equals the formula exactly (0 wei).
+    function test_targetEquationHoldsExactly() public pure {
         uint256 d = C.Y0 - C.CURVE_SUPPLY;
-        uint256 exact = C.X0 * C.CURVE_SUPPLY; // E * d should equal this
-        uint256 lhs = C.TARGET_ETH * d;
-        uint256 diff = lhs > exact ? lhs - exact : exact - lhs;
-        assertLt(diff, d); // |E - X0*S/d| < 1 wei
+        assertEq(C.TARGET_ETH * d, C.X0 * C.CURVE_SUPPLY); // E * d == X0 * S, 0 wei off
         // and the curve reserve at s = S is exactly E (I9 cap)
         assertEq(QZCurveMath.reserveAt(C.CURVE_SUPPLY), C.TARGET_ETH);
     }
 
-    /// @dev §1.6 "graduation pool price == final curve price": E/G == (X0+E)/(Y0-S) within 1e-21 relative, and both
-    ///      v4 sqrt prices agree to 1e-18 relative.
+    /// @dev §1.6 "graduation pool price == final curve price": E/G == (X0+E)/(Y0-S) within 1e-18 relative (X0 is not
+    ///      a whole wei: the gap is 6.8e-19), and both v4 sqrt prices agree to 1e-18 relative.
     function test_graduationPoolPriceEqualsFinalCurvePrice() public pure {
         uint256 d = C.Y0 - C.CURVE_SUPPLY;
         uint256 lhs = C.TARGET_ETH * d; // E/G = (X0+E)/d  <=>  E*d = (X0+E)*G
         uint256 rhs = (C.X0 + C.TARGET_ETH) * C.POOL_SUPPLY;
         uint256 diff = lhs > rhs ? lhs - rhs : rhs - lhs;
-        assertLt(diff * 1e21, lhs);
+        assertLt(diff * 1e18, lhs);
 
         for (uint256 i = 0; i < 2; i++) {
             bool qzIsCurrency0 = i == 0;
@@ -124,12 +128,12 @@ contract C0ConstantsTest is Test {
         }
     }
 
-    /// @dev §1.6 price table: start 0.000844 ETH/QZ (X0/Y0), final 0.0135 ETH/QZ (E/G), 16x.
+    /// @dev §1.6 price table: start 0.000309 ETH/QZ (X0/Y0), final 0.00495 ETH/QZ (E/G), 16x.
     function test_priceTable() public pure {
         uint256 start = QZCurveMath.priceAt(0, 0);
         uint256 end = QZCurveMath.priceAt(C.CURVE_SUPPLY, C.TARGET_ETH);
-        assertApproxEqAbs(start, 0.000844 ether, 0.000001 ether);
-        assertApproxEqAbs(end, 0.0135 ether, 0.000002 ether);
+        assertApproxEqAbs(start, 0.000309 ether, 0.000001 ether);
+        assertApproxEqAbs(end, 0.00495 ether, 0.000001 ether);
         assertEq(end * 1e18 / start / 1e14, 160_000); // 16.0000x (4 decimals)
         assertEq(end, C.TARGET_ETH * 1e18 / C.POOL_SUPPLY); // E/G
     }

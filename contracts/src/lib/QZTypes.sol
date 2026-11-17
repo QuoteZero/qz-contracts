@@ -11,7 +11,7 @@ enum Phase {
 }
 
 /// @notice Fixed traits of a machine (§1.3). Table committed by TRAITS_HASH (unit A0).
-/// @dev Standard machines: tier 1..4, track 0..9, relic false. Relics (#4441..#4444): tier 0, track 0 (unused), relic true.
+/// @dev Standard machines: tier 1..4, track 0..9, relic false. Relics (#2221..#2222): tier 0, track 0 (unused), relic true.
 struct Traits {
     uint8 tier;
     uint8 track;

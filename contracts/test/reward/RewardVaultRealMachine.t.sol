@@ -11,7 +11,7 @@ import {MockConverter, MockStock} from "./mocks/RewardMocks.sol";
 /// @notice `QZRewardVault` against the real `QZMachine` (unit C3): traits come from the real table by id, ownership
 ///         from the real ERC721. This test contract plays `QZCore` (mint and `onHardwire`). Converter is a mock.
 contract RewardVaultRealMachineTest is Test {
-    bytes32 internal constant TRAITS_HASH = 0x8c678f953f7895e038bb93558be897518034e8d7daa6385c4c7ff2e5df5c8102;
+    bytes32 internal constant TRAITS_HASH = 0xb9fe99db267885cafeffec71666b542c89d40c25017f7e008b21b296e7abd41e;
 
     QZMachine internal machine;
     QZRewardVault internal vault;

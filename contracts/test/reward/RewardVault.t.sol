@@ -118,39 +118,39 @@ contract RewardVaultTest is Test {
     /// A relic lit after a `notify` does not receive the relic share of that earlier `notify`.
     function test_lateRelicGetsNoOldRelicShare() public {
         _lit(1, alice, 1, 0);
-        _relic(4441, bob);
-        _notify(0, 4000); // rel = 4000 * 1 / 40 = 100 for the single lit relic
-        assertEq(vault.claimable(4441, 0), 100);
-        assertEq(vault.claimable(1, 0), 3900);
+        _relic(2221, bob);
+        _notify(0, 4000); // rel = 4000 * 1000 * 1 / (10000 * 2) = 200 for the single lit relic
+        assertEq(vault.claimable(2221, 0), 200);
+        assertEq(vault.claimable(1, 0), 3800);
 
-        _relic(4442, carol);
-        assertEq(vault.claimable(4442, 0), 0, "late relic starts at 0");
-        _notify(0, 4000); // R = 2: rel = 200 total, 100 each
-        assertEq(vault.claimable(4442, 0), 100);
-        assertEq(vault.claimable(4441, 0), 200);
+        _relic(2222, carol);
+        assertEq(vault.claimable(2222, 0), 0, "late relic starts at 0");
+        _notify(0, 4000); // R = 2: rel = 400 total, 200 each
+        assertEq(vault.claimable(2222, 0), 200);
+        assertEq(vault.claimable(2221, 0), 400);
     }
 
     /// A relic draws from every track, a standard machine only from its own.
     function test_relicClaimsAnyTrackStandardOnlyOwn() public {
         _lit(1, alice, 1, 0);
         _lit(2, alice, 1, 3);
-        _relic(4441, bob);
+        _relic(2221, bob);
         _notify(0, 4000);
         _notify(3, 8000);
-        assertEq(vault.claimable(4441, 0), 100);
-        assertEq(vault.claimable(4441, 3), 200);
+        assertEq(vault.claimable(2221, 0), 200);
+        assertEq(vault.claimable(2221, 3), 400);
         assertEq(vault.claimable(1, 3), 0, "standard machine of track 0 owns nothing on track 3");
 
         uint256[] memory ids = new uint256[](2);
         uint8[] memory tracks = new uint8[](2);
-        ids[0] = 4441;
-        ids[1] = 4441;
+        ids[0] = 2221;
+        ids[1] = 2221;
         tracks[0] = 0;
         tracks[1] = 3;
         vm.prank(bob);
         vault.claim(ids, tracks);
-        assertEq(_stock(0).balanceOf(bob), 100);
-        assertEq(_stock(3).balanceOf(bob), 200);
+        assertEq(_stock(0).balanceOf(bob), 200);
+        assertEq(_stock(3).balanceOf(bob), 400);
     }
 
     /// With no relic lit the whole amount goes to the standard machines (unlit relic slots fall back).
@@ -165,7 +165,7 @@ contract RewardVaultTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IQZRewardVault.TrackNotActive.selector, uint8(5)));
         this._deliver(5, 1);
 
-        _relic(4441, alice);
+        _relic(2221, alice);
         vm.expectRevert(abi.encodeWithSelector(IQZRewardVault.TrackNotActive.selector, uint8(5)));
         this._deliver(5, 1);
     }
@@ -372,15 +372,15 @@ contract RewardVaultTest is Test {
     /// Frozen claims leave no half-applied state: debt and totals are exactly as before the failed attempt.
     function test_T10_failedClaimRestoresState() public {
         _lit(1, alice, 1, 0);
-        _relic(4441, bob);
+        _relic(2221, bob);
         _notify(0, 4000);
         _stock(0).setPaused(true);
         uint256 cStd = vault.claimable(1, 0);
-        uint256 cRel = vault.claimable(4441, 0);
+        uint256 cRel = vault.claimable(2221, 0);
         _claim(alice, 1, 0);
-        _claim(bob, 4441, 0);
+        _claim(bob, 2221, 0);
         assertEq(vault.claimable(1, 0), cStd);
-        assertEq(vault.claimable(4441, 0), cRel);
+        assertEq(vault.claimable(2221, 0), cRel);
         assertEq(vault.totalClaimed(0), 0);
     }
 
@@ -416,12 +416,12 @@ contract RewardVaultTest is Test {
 
     function test_largeAmountsDoNotOverflow() public {
         _lit(1, alice, 4, 0);
-        _relic(4441, bob);
+        _relic(2221, bob);
         _notify(0, 1e27);
         uint256 c = vault.claimable(1, 0);
-        assertEq(c, 1e27 - 1e27 / 40);
+        assertEq(c, 1e27 - 1e27 / 20);
         _claim(alice, 1, 0);
-        _claim(bob, 4441, 0);
+        _claim(bob, 2221, 0);
         assertLe(vault.totalClaimed(0), 1e27);
     }
 
@@ -430,14 +430,14 @@ contract RewardVaultTest is Test {
     uint256[] internal _stdIds;
     uint256[] internal _relicIds;
     uint256 internal _nextStd = 1;
-    uint256 internal _nextRelic = 4441;
+    uint256 internal _nextRelic = 2221;
 
     function _user(uint256 x) internal view returns (address) {
         uint256 k = x % 3;
         return k == 0 ? alice : (k == 1 ? bob : carol);
     }
 
-    /// @dev One random program over machines on tracks 0 and 1 and up to 4 relics.
+    /// @dev One random program over machines on tracks 0 and 1 and up to 2 relics.
     function testFuzz_I6_conservation(uint256 seed) public {
         for (uint256 s; s < 40; ++s) {
             seed = uint256(keccak256(abi.encode(seed, s)));
@@ -452,7 +452,7 @@ contract RewardVaultTest is Test {
         if (op == 0 && _stdIds.length < 64) {
             _lit(_nextStd, _user(r >> 8), uint8((r >> 4) % 4) + 1, uint8(r % 2));
             _stdIds.push(_nextStd++);
-        } else if (op == 1 && _relicIds.length < 4) {
+        } else if (op == 1 && _relicIds.length < 2) {
             _relic(_nextRelic, _user(r >> 8));
             _relicIds.push(_nextRelic++);
         } else if (op == 2) {

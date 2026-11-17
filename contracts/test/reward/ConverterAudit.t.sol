@@ -152,8 +152,8 @@ contract ConverterAuditTest is ConverterFixture {
     /// SPEC §2.5: `openEpoch` reverts only when no machine at all is lit. With relics only there is no standard track
     /// to fund, so the pots stay where they are and the executor's call succeeds as a heartbeat.
     function test_I4_onlyRelicsLitDoesNotRevertNoLitMachines() public {
-        machine.set(4441, alice, 0, 0, true);
-        vault.onHardwire(4441);
+        machine.set(2221, alice, 0, 0, true);
+        vault.onHardwire(2221);
         _setRoutesAndSeal();
         vm.warp(launchAt + 24 hours + 1);
         _fundPots(1 ether, 0);

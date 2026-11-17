@@ -13,7 +13,7 @@ import {QZConstants} from "../lib/QZConstants.sol";
 import {QZTraitsTable} from "./QZTraitsTable.sol";
 
 /// @title QZMachine
-/// @notice The lit machine: plain ERC-721, ids 1..4444, minted only by `QZCore.hardwire` (SPEC §1.2, §1.3, §5.1).
+/// @notice The lit machine: plain ERC-721, ids 1..2222, minted only by `QZCore.hardwire` (SPEC §1.2, §1.3, §5.1).
 ///
 ///         - Separate from the ticket mirror, so a machine approval never meets the fungible-side logic (§4.1).
 ///         - `mint` is `QZCore`-only and each id can be minted once in the contract's lifetime (I3). Nothing burns:

@@ -57,7 +57,7 @@ a new ABI event without a row fails `tsc`).
 | QZDarkMirror | Transfer | address indexed from, address indexed to, uint256 indexed tokenId | ERC-721 mirror of ticket units: emitted on every ticket mint, burn or move (always via QZCore). | `chain.tickets` | machines |
 | QZEntropy | EpochRevealed | uint64 indexed epoch, bytes32 seed | Keeper reveals the next hash-onion preimage; the epoch seed becomes final and pending tickets can resolve. | `chain.epochs` | machines, admin |
 | QZEntropy | EpochRolled | uint64 indexed from, uint64 indexed to | Epoch counter advances (120 s cadence, or rollover after a missed reveal window). | `chain.epochs` | machines, admin |
-| QZEntropy | MachineReturned | uint256 indexed machineId, uint64 epoch | A revealed machineId returns to the draw pool because its ticket dissolved after the epoch closed (balance fell below a whole QZ); usable from `epoch`. Hardwiring never returns a machine: a hardwired id leaves the pool permanently (I3). | `chain.machines` | machines, history |
+| QZEntropy | MachineReturned | uint256 indexed machineId, uint64 epoch | A revealed machineId goes back to the draw pool because its ticket dissolved after the epoch closed (balance fell below a whole QZ); usable from `epoch`. Hardwiring never sends a machine back: a hardwired id leaves the pool permanently (I3). | `chain.machines` | machines, history |
 | QZMachine | Approval | address indexed owner, address indexed approved, uint256 indexed tokenId | ERC-721 approval on a machine. | `chain.approvals` | - |
 | QZMachine | ApprovalForAll | address indexed owner, address indexed operator, bool approved | ERC-721 operator approval on machines. | `chain.approvals` | - |
 | QZMachine | MetadataFrozen | - | Owner freezes the base URI forever (one-time). | `chain.metadata_events` | admin |
@@ -163,7 +163,7 @@ State is `(sold, reserve)`. Reference code: `QZCurveMath.sol` and `packages/qz-s
 - `reserveAt(s) = ceil(K / (Y0 - s)) - X0`. `Y0` is rounded up to the wei, so `reserveAt(S) == E == 12 ether` exactly and I9 (`reserve <= E`) holds.
 - Buy with net `n = ethIn - fee`: `s' = Y0 - ceil(K / (X0 + e + n))`. QZ rounds down, the reserve becomes `e + n` exactly.
 - Fee is `ceil(gross * 100 / 10000)` on the ETH side of both buy and sell. Reward share is `floor(fee * 75 / 100)`, treasury takes the rest.
-- Sell: `e' = reserveAt(s - q)`, gross release `e - e'`, ETH rounds down. A buy/sell round trip never profits (fuzzed).
+- Sell: `e' = reserveAt(s - q)`, gross release `e - e'`, ETH rounds down. A buy/sell round trip never ends with more ETH than it started with (fuzzed).
 - A buy that would pass `S` is cut at `S` and the surplus is refunded. Phase limits (F0/F1/F2) revert, they never truncate.
 - `quoteBuyExactQz` returns the minimal ETH for at least `qzOut`; the curve may deliver up to a few hundred wei of QZ more.
 

@@ -66,7 +66,7 @@ a new ABI event without a row fails `tsc`).
 | QZCurve | BuysUnpaused | address by | Owner resumes curve buys. | `chain.pauses` | trade, admin |
 | QZCurve | CurveBuy | address indexed buyer, address indexed recipient, uint256 ethIn, uint256 qzOut, uint256 fee, uint8 phase | ETH -> QZ on the bonding curve (direct or via router). `phase` is the Phase at purchase time. | `chain.curve_trades` | trade, token, history |
 | QZCurve | CurveSell | address indexed seller, address indexed recipient, uint256 qzIn, uint256 ethOut, uint256 fee | QZ -> ETH on the bonding curve. | `chain.curve_trades` | trade, token, history |
-| QZCurve | Graduated | uint256 wethToPool, uint256 qzToPool, uint160 sqrtPriceX96, uint128 liquidity | The curve reached 12 ETH: pool initialised, all raised WETH and the 888.8 QZ reserve sent to the lock, curve closed. | `chain.curve_lifecycle` | trade, token, admin |
+| QZCurve | Graduated | uint256 wethToPool, uint256 qzToPool, uint160 sqrtPriceX96, uint128 liquidity | The curve reached 2.2 ETH: pool initialised, all raised WETH and the 444.4 QZ reserve sent to the lock, curve closed. | `chain.curve_lifecycle` | trade, token, admin |
 | QZCurve | PotPulled | address indexed sink, uint256 amount | The converter (reward pot) or the treasury pulls its accumulated curve fees. | `chain.pot_pulls` | admin |
 | QZCurve | Started | uint64 launchAt | Owner calls start(launchAt): F0 begins at launchAt. | `chain.curve_lifecycle` | trade, admin |
 | QZHook | FeeTaken | address indexed swapper, bool isBuy, uint256 wethFee, uint256 feeBps | Every pool swap that pays the 3% hook fee (taken in WETH, afterSwap). | `chain.hook_fees` | token, history |
@@ -160,7 +160,7 @@ Waitlist and SIGNAL API types are off-chain and not part of this repository.
 State is `(sold, reserve)`. Reference code: `QZCurveMath.sol` and `packages/qz-sdk/src/curve.ts` (same vectors in
 `test/C0CurveMath.t.sol` and `test/curve.test.ts`).
 
-- `reserveAt(s) = ceil(K / (Y0 - s)) - X0`. `Y0` is rounded up to the wei, so `reserveAt(S) == E == 12 ether` exactly and I9 (`reserve <= E`) holds.
+- `reserveAt(s) = ceil(K / (Y0 - s)) - X0`. `Y0` is rounded up to the wei, so `reserveAt(S) == E == 2.2 ether` exactly and I9 (`reserve <= E`) holds.
 - Buy with net `n = ethIn - fee`: `s' = Y0 - ceil(K / (X0 + e + n))`. QZ rounds down, the reserve becomes `e + n` exactly.
 - Fee is `ceil(gross * 100 / 10000)` on the ETH side of both buy and sell. Reward share is `floor(fee * 75 / 100)`, treasury takes the rest.
 - Sell: `e' = reserveAt(s - q)`, gross release `e - e'`, ETH rounds down. A buy/sell round trip never ends with more ETH than it started with (fuzzed).
@@ -189,18 +189,18 @@ price, hook flags).
 
 | Constant | Value | Spec section (NatSpec) |
 |---|---|---|
-| `TOTAL_SUPPLY` | `4444000000000000000000` | §1.3 invariant I1: `totalSupply + totalHardwired * 1e18 == 4444e18`. |
+| `TOTAL_SUPPLY` | `2222000000000000000000` | §1.3 invariant I1: `totalSupply + totalHardwired * 1e18 == 2222e18`. |
 | `UNIT` | `1000000000000000000` | §1.2: one whole QZ = one dark ticket = one potential machine. |
-| `TOTAL_MACHINES` | `4444` | §1.3: machine ids are 1..4444. |
-| `STANDARD_MACHINES` | `4440` | §1.3 tiers: 2400 + 1300 + 560 + 180 standard machines. |
-| `RELIC_COUNT` | `4` | §1.3: relics "Origin Wire" #4441..#4444. |
+| `TOTAL_MACHINES` | `2222` | §1.3: machine ids are 1..2222. |
+| `STANDARD_MACHINES` | `2220` | §1.3 tiers: 1200 + 650 + 280 + 90 standard machines. |
+| `RELIC_COUNT` | `2` | §1.3: relics "Origin Wire" #2221..#2222. |
 | `TRACK_COUNT` | `10` | §3.1: ten reward tracks (stock tokens). Order: NVDA, AAPL, TSLA, GME, SPY, PLTR, NFLX, RDDT, MSTR, SPCX. |
-| `MACHINES_PER_TRACK` | `444` | §1.3: 4440 standard machines / 10 tracks = 444 per track. |
+| `MACHINES_PER_TRACK` | `222` | §1.3: 2220 standard machines / 10 tracks = 222 per track. |
 | `TIER_RELIC` | `0` | §1.3 tier table, tier ids 1..4 = I Ticker, II Relay, III Endpoint, IV Zero Desk. Tier 0 = relic. |
-| `TIER_I_PER_TRACK` | `240` | §1.3 per track: 240 / 130 / 56 / 18. |
+| `TIER_I_PER_TRACK` | `120` | §1.3 per track: 120 / 65 / 28 / 9. |
 | `WEIGHT_TIER_I` | `10` | §2.5 integer reward weights: tier I = 10, II = 15, III = 25, IV = 40 (1x / 1.5x / 2.5x / 4x times 10). |
-| `TOTAL_STANDARD_WEIGHT` | `64700` | §1.3: total standard weight 6470 in 1x units (2400*1 + 1300*1.5 + 560*2.5 + 180*4) = 64700 in the integer weights of §2.5 (x10). |
-| `RELIC_SHARE_BPS` | `1000` | §1.3 / §2.5: each track's distribution gives 10% to the relics, split equally over the 4 relic slots (2.5% each). Unlit relic slots fall back to the standard machines. `rel = amount * 10% * R / 4`. |
+| `TOTAL_STANDARD_WEIGHT` | `32350` | §1.3: total standard weight 3235 in 1x units (1200*1 + 650*1.5 + 280*2.5 + 90*4) = 32350 in the integer weights of §2.5 (x10). |
+| `RELIC_SHARE_BPS` | `1000` | §1.3 / §2.5: each track's distribution gives 10% to the relics, split equally over the 2 relic slots (5% each). Unlit relic slots fall back to the standard machines. `rel = amount * 10% * R / 2`. |
 | `ACC_PRECISION` | `1000000000000000000000000000000000000` | §2.5 accumulator scale P = 1e36. |
 | `HOOK_FEE_BPS` | `300` | §1.4 post-graduation swap fee: 3% of the WETH side, buy and sell. Taken in the hook's afterSwap. |
 | `HOOK_REWARD_BPS` | `200` | §1.4 split of the 3%, in bps of swap volume: 2.00 / 0.50 / 0.25 / 0.25. Sum = HOOK_FEE_BPS. |
@@ -212,12 +212,12 @@ price, hook flags).
 | `F0_MAX_PER_WALLET` | `2000000000000000000` | §1.5 F0: max 2 QZ per wallet cumulative (no separate per-tx limit; the wallet limit binds). |
 | `F1_MAX_PER_TX` | `2000000000000000000` | §1.5 F1: max 2 QZ per tx, max 10 QZ per wallet cumulative (includes F0 purchases). |
 | `F2_MAX_PER_TX` | `20000000000000000000` | §1.5 F2: max 20 QZ per tx, no per-wallet limit. |
-| `CURVE_SUPPLY` | `3555200000000000000000` | §1.6 S = QZ sold on the curve: 3555.2 QZ (80% of 4444). |
-| `POOL_SUPPLY` | `888800000000000000000` | §1.6 G = QZ reserved for the pool: 888.8 QZ (= 4444 - S). |
-| `X0` | `4000000000000000000` | §1.6 X0 = virtual ETH reserve: 4 ETH. |
-| `Y0` | `4740266666666666666667` | §1.6 Y0 = S^2 / (S - G), exact: S^2 / (S - G) = 4740.26666...e18 wei. The wei value is rounded UP (...666.67 -> ...667). Rounding up makes the reserve at s = S exactly E (12 ether): with the floor (...666) `reserveAt(S)` would be E + 1 wei and violate I9 `reserveEth <= E`. Relations (proved in test/C0Constants.t.sol): E == X0*S/(Y0-S) within 1 wei, pool price E/G == final curve price (X0+E)/(Y0-S) within 1e-21 relative. |
-| `CURVE_K` | `18961066666666666666668000000000000000000` | §1.6 K = X0 * Y0, the constant product. |
-| `TARGET_ETH` | `12000000000000000000` | §1.6 E = graduation target: 12 ETH of real reserve at s = S. I9 cap for `reserveEth`. |
+| `CURVE_SUPPLY` | `1777600000000000000000` | §1.6 S = QZ sold on the curve: 1777.6 QZ (80% of 2222). |
+| `POOL_SUPPLY` | `444400000000000000000` | §1.6 G = QZ reserved for the pool: 444.4 QZ (= 2222 - S). |
+| `X0` | `733333333333333334` | §1.6 X0 = virtual ETH reserve = E / 3 = 0.7333... ETH, not a whole wei: 733333333333333333.33 wei, rounded UP to 733_333_333_333_333_334 (the curve is favored: the buyer never pays less than the exact curve asks). |
+| `Y0` | `2370133333333333333872` | §1.6 Y0 = S^2 / (S - G) = 2370.13333...e18 wei (exact: ...333_333.33, ceil ...333_334). With X0 itself rounded up, the exact ceil (`...333_334`) would leave `reserveAt(S) = E + 2 wei`, above E: it would break the graduation deposit of exactly E and I9 `reserveEth <= E`. Y0 is therefore the smallest round-up that keeps `E = X0*S/(Y0-S)` exact: `Y0 = S + S*X0/E` (S/E = 808 exactly, so `Y0 - S = 808 * X0`). That is 538 wei above the ideal Y0, relative 2.3e-19. Then `K/(Y0-S) = Y0/808 = E + X0` exactly and `reserveAt(S) == E` (I9 `reserveEth <= E` holds with equality). Relations (proved in test/C0Constants.t.sol): E == X0*S/(Y0-S) exactly (0 wei), pool price E/G == final curve price (X0+E)/(Y0-S) within 1e-18 relative (inherent: X0 is not a whole wei, the gap is 6.8e-19). |
+| `CURVE_K` | `1738097777777777779752888888888888889248` | §1.6 K = X0 * Y0, the constant product. |
+| `TARGET_ETH` | `2200000000000000000` | §1.6 E = graduation target: 2.2 ETH of real reserve at s = S. I9 cap for `reserveEth`. |
 | `POOL_LP_FEE` | `0` | C0 decision (spec silent): LP fee 0; the 3% is taken by the hook (§1.4). |
 | `POOL_TICK_SPACING` | `60` | C0 decision (spec silent): tickSpacing 60 so full range is [-887220, 887220]. |
 | `HOOK_FLAGS` | `10436` | §5.1 QZHook: beforeInitialize, beforeAddLiquidity, beforeSwap, afterSwap + afterSwap return delta. |

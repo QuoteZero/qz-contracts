@@ -158,7 +158,7 @@ contract QZMachineInvariantTest is StdInvariant, MachineFixture {
         assertEq(machine.totalMinted(), core.totalHardwired(), "totalMinted == totalHardwired");
         assertEq(handler.mintedCount(), core.totalHardwired());
         assertFalse(handler.machineIssuedTwice(), "a machine id was issued twice");
-        assertFalse(handler.machineOutOfRange(), "a machine id out of 1..4444");
+        assertFalse(handler.machineOutOfRange(), "a machine id out of 1..2222");
     }
 
     /// @dev Every id the handler saw minted still has an owner: nothing is ever burned.

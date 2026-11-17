@@ -19,7 +19,7 @@ abstract contract MachineFixture is Test {
     uint256 internal constant N = 600;
     uint256 internal constant EPOCH = QZConstants.EPOCH_DURATION;
     uint256 internal constant UNIT = QZConstants.UNIT;
-    bytes32 internal constant TRAITS_HASH = 0x8c678f953f7895e038bb93558be897518034e8d7daa6385c4c7ff2e5df5c8102;
+    bytes32 internal constant TRAITS_HASH = 0xb9fe99db267885cafeffec71666b542c89d40c25017f7e008b21b296e7abd41e;
     address internal constant REVEALER = address(0xBEEF);
 
     QZCore internal core;

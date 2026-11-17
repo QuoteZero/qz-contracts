@@ -81,7 +81,7 @@ test('generated constants equal the Solidity source', () => {
   const sol = readFileSync(join(repo, 'contracts/src/lib/QZConstants.sol'), 'utf8');
   const parsed = parseIntegerConstants(sol, () => 0n).filter((c) => c.name !== 'HOOK_FLAGS');
   for (const c of parsed) assert.equal((K as Record<string, unknown>)[c.name], c.value, c.name);
-  assert.equal(K.TOTAL_SUPPLY, 4444n * 10n ** 18n);
+  assert.equal(K.TOTAL_SUPPLY, 2222n * 10n ** 18n);
   assert.equal(K.EID_ROBINHOOD, BigInt(EID.robinhood));
   assert.equal(K.EID_INK, BigInt(EID.ink));
   assert.equal(K.EID_BASE, BigInt(EID.base));

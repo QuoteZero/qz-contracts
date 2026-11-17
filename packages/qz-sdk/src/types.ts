@@ -37,7 +37,7 @@ export interface CurveStateView {
   reserve: Wei;
   /** Wei per whole QZ. */
   price: Wei;
-  /** Basis points of the 3555.2 QZ sold, 0..10000. */
+  /** Basis points of the 1777.6 QZ sold, 0..10000. */
   progressBps: number;
   graduated: boolean;
   /** Phase limits in force now (wei). */

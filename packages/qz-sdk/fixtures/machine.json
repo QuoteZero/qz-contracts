@@ -1,5 +1,5 @@
 {
-  "id": 17,
+  "id": 39,
   "tier": 2,
   "relic": false,
   "track": 0,
@@ -22,7 +22,7 @@
   "hardwiredAt": 1763299950,
   "rewards": [
     {
-      "machineId": 17,
+      "machineId": 39,
       "track": 0,
       "ticker": "NVDA",
       "stock": "0x3333333333333333333333333333333333333333",
@@ -33,7 +33,7 @@
   ],
   "circuit": {
     "week": 0,
-    "completed": false,
-    "flags": 1
+    "completed": true,
+    "flags": 3
   }
 }

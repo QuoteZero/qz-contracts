@@ -152,7 +152,7 @@ contract QZEntropy is IQZEntropy {
 
     // ───────────── pool state ─────────────
 
-    /// @dev Virtual array: slot i holds `_pool[i]`, or `i + 1` while never written (initial pool = machines 1..4444).
+    /// @dev Virtual array: slot i holds `_pool[i]`, or `i + 1` while never written (initial pool = machines 1..2222).
     mapping(uint256 => uint16) private _pool;
     uint16 private _poolSize = uint16(QZConstants.TOTAL_MACHINES);
     uint64 private _poolEpoch; // epoch whose returns were last merged

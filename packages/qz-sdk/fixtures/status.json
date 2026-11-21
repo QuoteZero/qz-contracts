@@ -1,13 +1,18 @@
 {
   "chainId": 4663,
-  "indexedBlock": 1200,
+  "indexedBlock": 1203,
   "headBlock": 1203,
-  "indexedAt": 1763300000,
-  "chainTime": 1763299990,
-  "phase": "F1",
-  "launchAt": 1763290000,
-  "buysPaused": false,
-  "corePaused": false,
-  "graduated": false,
-  "epoch": 42
+  "indexedAt": 1763520000,
+  "chainTime": 1763520000,
+  "phase": "closed",
+  "minted": 1,
+  "finalized": true,
+  "hashLocked": true,
+  "revealed": true,
+  "lit": 1,
+  "paused": {
+    "machine": false,
+    "forge": false,
+    "converter": false
+  }
 }

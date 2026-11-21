@@ -1,0 +1,19 @@
+{
+  "harvested": "1000000000",
+  "toConverter": "250000000",
+  "toTreasury": "750000000",
+  "treasuryParked": "0",
+  "treasuryClaimed": "750000000",
+  "epochsOpened": 1,
+  "recent": [
+    {
+      "caller": "0x1111111111111111111111111111111111111111",
+      "total": "1000000000",
+      "toConverter": "250000000",
+      "toTreasury": "750000000",
+      "txHash": "0xabababababababababababababababababababababababababababababababab",
+      "blockNumber": 1202,
+      "timestamp": 1763300200
+    }
+  ]
+}

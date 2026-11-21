@@ -1,25 +1,19 @@
 {
   "id": 39,
+  "owner": "0x1111111111111111111111111111111111111111",
+  "mintedAt": 1763300100,
+  "lit": true,
+  "litAt": 1763511000,
   "tier": 2,
   "relic": false,
   "track": 0,
   "ticker": "NVDA",
-  "owner": "0x1111111111111111111111111111111111111111",
-  "eid": 30416,
-  "hardwired": true,
   "weight": 15,
-  "traits": [
-    {
-      "name": "Tier",
-      "value": "II"
-    },
-    {
-      "name": "Track",
-      "value": "NVDA"
-    }
-  ],
-  "imageUrl": null,
-  "hardwiredAt": 1763299950,
+  "mint": {
+    "phase": 1,
+    "price": "3000000",
+    "txHash": "0xabababababababababababababababababababababababababababababababab"
+  },
   "rewards": [
     {
       "machineId": 39,
@@ -30,10 +24,5 @@
       "claimed": "0",
       "frozen": false
     }
-  ],
-  "circuit": {
-    "week": 0,
-    "completed": true,
-    "flags": 3
-  }
+  ]
 }

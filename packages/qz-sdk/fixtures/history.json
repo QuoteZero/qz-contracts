@@ -2,18 +2,14 @@
   "address": "0x1111111111111111111111111111111111111111",
   "items": [
     {
-      "kind": "curve_buy",
+      "kind": "mint",
       "txHash": "0xabababababababababababababababababababababababababababababababab",
-      "blockNumber": 1199,
-      "logIndex": 4,
-      "timestamp": 1763299900,
-      "amount": "1000000000000000000",
-      "machineId": null,
-      "ticketId": null,
-      "peerEid": null,
-      "peerChain": null,
-      "guid": null,
-      "detail": "Bought 1361.56 QZ"
+      "blockNumber": 1201,
+      "logIndex": 3,
+      "timestamp": 1763300100,
+      "amount": "3000000",
+      "machineId": 39,
+      "detail": "Minted machine #39"
     }
   ],
   "nextCursor": null

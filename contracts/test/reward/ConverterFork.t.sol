@@ -24,34 +24,6 @@ interface IRouterFactory {
     function factory() external view returns (address);
 }
 
-contract ForkPot {
-    address internal immutable weth;
-    uint64 public launchAt;
-    uint256 public rewardPot;
-
-    constructor(address weth_) {
-        weth = weth_;
-    }
-
-    function setLaunchAt(uint64 t) external {
-        launchAt = t;
-    }
-
-    function setPot(uint256 a) external {
-        rewardPot = a;
-    }
-
-    function redirected() external pure returns (bool) {
-        return false;
-    }
-
-    function pullRewardPot() external returns (uint256 a) {
-        a = rewardPot;
-        rewardPot = 0;
-        IERC20(weth).transfer(msg.sender, a);
-    }
-}
-
 /// @notice Fork test on the real Robinhood Chain: stock token evidence, and the real WETH -> USDG (v3) -> stock (v4)
 ///         route for all ten tracks, through the real `PoolManager`, with the median/TWAP floors live.
 contract ConverterForkTest is RobinhoodFork {
@@ -67,9 +39,6 @@ contract ConverterForkTest is RobinhoodFork {
     QZConverter internal conv;
     QZRewardVault internal vault;
     MockMachine internal machine;
-    ForkPot internal hook;
-    ForkPot internal curve;
-    ForkPot internal circuit;
 
     string[10] internal symbols = ["NVDA", "AAPL", "TSLA", "GME", "SPY", "PLTR", "NFLX", "RDDT", "MSTR", "SPCX"];
 
@@ -93,10 +62,6 @@ contract ConverterForkTest is RobinhoodFork {
     function _deploy(uint8 overrideTrack, StockRoute memory overrideRoute) internal {
         vm.deal(alice, 1 ether);
         machine = new MockMachine();
-        hook = new ForkPot(QZAddresses.WETH);
-        curve = new ForkPot(QZAddresses.WETH);
-        circuit = new ForkPot(QZAddresses.WETH);
-        curve.setLaunchAt(uint64(block.timestamp - 25 hours));
         address v3Factory = IRouterFactory(QZAddresses.V3_SWAP_ROUTER_02).factory();
         uint256 nonce = vm.getNonce(address(this));
         address predicted = vm.computeCreateAddress(address(this), nonce + 1);
@@ -113,9 +78,7 @@ contract ConverterForkTest is RobinhoodFork {
                 v3Router: QZAddresses.V3_SWAP_ROUTER_02,
                 poolManager: QZAddresses.POOL_MANAGER,
                 vault: address(vault),
-                hook: address(hook),
-                curve: address(curve),
-                circuit: address(circuit)
+                lightingOpensAt: uint64(block.timestamp - 25 hours)
             })
         );
         assertEq(address(conv), predicted);
@@ -137,12 +100,10 @@ contract ConverterForkTest is RobinhoodFork {
     function _prepare(uint8 t, StockRoute memory r) internal returns (uint256 pot) {
         _deploy(t, r);
         machine.set(100 + t, alice, 1, t, false);
-        vault.onHardwire(100 + t);
+        vault.register(100 + t);
         pot = 10 ether;
-        // `deal` probes dozens of slots over RPC and outlives the public node's state window; WETH keeps balances at slot 51
-        vm.store(QZAddresses.WETH, keccak256(abi.encode(address(hook), uint256(51))), bytes32(pot));
-        assertEq(IERC20(QZAddresses.WETH).balanceOf(address(hook)), pot, "weth slot");
-        hook.setPot(pot);
+        // the splitter's ETH: the converter wraps it with the real WETH9 on `openEpoch`
+        vm.deal(address(conv), pot);
 
         for (uint256 i; i < 10; ++i) {
             vm.prank(keeper);
@@ -238,7 +199,8 @@ contract ConverterForkTest is RobinhoodFork {
         } catch (bytes memory err) {
             assertEq(bytes4(err), IQZConverter.BelowFloor.selector);
         }
-        assertEq(conv.trackPot(8), pot, "pot stays");
+        (uint256 w,) = conv.trackPot(8);
+        assertEq(w, pot, "pot stays");
     }
 
     function test_fork_convert_SPCX() public {

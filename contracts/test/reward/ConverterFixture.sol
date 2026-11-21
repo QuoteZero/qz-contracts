@@ -16,10 +16,10 @@ import {QZRewardVault} from "../../src/reward/QZRewardVault.sol";
 import {QZPriceMath} from "../../src/reward/QZPriceMath.sol";
 import {StockRoute} from "../../src/lib/QZTypes.sol";
 import {QZConstants} from "../../src/lib/QZConstants.sol";
-import {MockERC20, MockStock, MockMachine, MockPot, MockV3, MockPoolManager} from "./mocks/RewardMocks.sol";
+import {MockERC20, MockWETH, MockStock, MockMachine, MockV3, MockPoolManager} from "./mocks/RewardMocks.sol";
 
 /// @notice Local (non-fork) world for `QZConverter`: a constant-liquidity mock v4 `PoolManager` with ten USDG/stock pools (both token
-///         orders), mock v3 router/pool, mock hook/curve pots, the real `QZRewardVault`. The test contract is the core.
+///         orders), mock v3 router/pool, a WETH9 stand-in, the real `QZRewardVault`. The test contract is the forge.
 abstract contract ConverterFixture is Test {
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
@@ -33,14 +33,11 @@ abstract contract ConverterFixture is Test {
 
     MockPoolManager internal pm;
 
-    MockERC20 internal weth;
+    MockWETH internal weth;
     MockERC20 internal usdg;
     MockStock[10] internal stocks;
     MockV3 internal v3;
     MockMachine internal machine;
-    MockPot internal hook;
-    MockPot internal curve;
-    MockPot internal circuit;
     QZRewardVault internal vault;
     QZConverter internal conv;
 
@@ -51,7 +48,7 @@ abstract contract ConverterFixture is Test {
     address internal attacker = makeAddr("attacker");
     address internal alice = makeAddr("alice");
 
-    uint64 internal launchAt;
+    uint64 internal lightingOpensAt;
 
     function setUp() public virtual {
         vm.warp(T0);
@@ -61,8 +58,8 @@ abstract contract ConverterFixture is Test {
         address usdgAddr = address(uint160(0x8000000000000000000000000000000000000001));
         deployCodeTo("RewardMocks.sol:MockERC20", abi.encode("USDG", "USDG", uint8(6)), usdgAddr);
         usdg = MockERC20(usdgAddr);
-        weth = MockERC20(address(uint160(0x4000000000000000000000000000000000000001)));
-        deployCodeTo("RewardMocks.sol:MockERC20", abi.encode("WETH", "WETH", uint8(18)), address(weth));
+        weth = MockWETH(address(uint160(0x4000000000000000000000000000000000000001)));
+        deployCodeTo("RewardMocks.sol:MockWETH", address(weth));
         for (uint256 i; i < 10; ++i) {
             address a =
                 i % 2 == 0 ? address(uint160((uint256(1) << 156) + i)) : address(uint160((uint256(15) << 156) + i));
@@ -70,13 +67,9 @@ abstract contract ConverterFixture is Test {
             stocks[i] = MockStock(a);
         }
 
-        v3 = new MockV3(weth, usdg, WETH_USDG_TICK);
+        v3 = new MockV3(MockERC20(address(weth)), usdg, WETH_USDG_TICK);
         machine = new MockMachine();
-        hook = new MockPot(weth);
-        curve = new MockPot(weth);
-        circuit = new MockPot(weth);
-        launchAt = T0 + 1 hours;
-        curve.setLaunchAt(launchAt);
+        lightingOpensAt = T0 + 1 hours;
 
         uint256 nonce = vm.getNonce(address(this));
         address predictedConverter = vm.computeCreateAddress(address(this), nonce + 1);
@@ -93,9 +86,7 @@ abstract contract ConverterFixture is Test {
                 v3Router: address(v3),
                 poolManager: address(pm),
                 vault: address(vault),
-                hook: address(hook),
-                curve: address(curve),
-                circuit: address(circuit)
+                lightingOpensAt: lightingOpensAt
             })
         );
         assertEq(address(conv), predictedConverter, "converter address prediction");
@@ -154,7 +145,7 @@ abstract contract ConverterFixture is Test {
     function _lightTracks(uint8[] memory tracks) internal {
         for (uint256 i; i < tracks.length; ++i) {
             machine.set(100 + tracks[i], alice, 1, tracks[i], false);
-            vault.onHardwire(100 + tracks[i]);
+            vault.register(100 + tracks[i]);
         }
     }
 
@@ -199,20 +190,33 @@ abstract contract ConverterFixture is Test {
         }
     }
 
-    /// @dev Lands just after `launchAt + 24 h` with `n` fresh keeper observations on every track in `tracks`.
-    ///      The keeper starts poking inside the first day, as in production (liveness clock starts at `launchAt`).
+    /// @dev Lands just after `firstEpochAt` with `n` fresh keeper observations on every track in `tracks`.
+    ///      The keeper starts poking inside the first day, as in production (its liveness clock starts when lighting opens).
     function _readyForConvert(uint8[] memory tracks, uint256 n) internal {
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours - 20 minutes);
+        vm.warp(lightingOpensAt + 24 hours - 20 minutes);
         for (uint256 i; i < tracks.length; ++i) {
             _pokeKeeper(tracks[i], n);
         }
-        vm.warp(launchAt + 24 hours + 1);
+        vm.warp(lightingOpensAt + 24 hours + 1);
     }
 
-    function _fundPots(uint256 hookAmt, uint256 curveAmt) internal {
-        if (hookAmt != 0) hook.fund(hookAmt);
-        if (curveAmt != 0) curve.fund(curveAmt);
+    /// @dev The splitter sends `ethAmt` ETH; the machine mint sends `usdgAmt` USDG. Neither is assigned to a track yet.
+    function _fundPots(uint256 ethAmt, uint256 usdgAmt) internal {
+        if (ethAmt != 0) {
+            vm.deal(address(this), address(this).balance + ethAmt);
+            (bool ok,) = address(conv).call{value: ethAmt}("");
+            assertTrue(ok, "conv receives ETH");
+        }
+        if (usdgAmt != 0) usdg.mint(address(conv), usdgAmt);
+    }
+
+    function _potWeth(uint8 t) internal view returns (uint256 w) {
+        (w,) = conv.trackPot(t);
+    }
+
+    function _potUsdg(uint8 t) internal view returns (uint256 u) {
+        (, u) = conv.trackPot(t);
     }
 
     function _open() internal {

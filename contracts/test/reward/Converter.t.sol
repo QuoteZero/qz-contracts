@@ -110,29 +110,32 @@ contract ConverterTest is ConverterFixture {
 
     function test_openEpoch_revertsWithoutLitMachine() public {
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours + 1);
+        vm.warp(lightingOpensAt + 24 hours + 1);
         _fundPots(1 ether, 0);
         vm.prank(executor);
         vm.expectRevert(IQZConverter.NoLitMachines.selector);
         conv.openEpoch();
-        assertEq(hook.rewardPot(), 1 ether, "the pot stays where it is");
+        (uint256 eth, uint256 w,) = conv.potBalance();
+        assertEq(eth, 1 ether, "the ETH stays where it is (nothing was wrapped)");
+        assertEq(w, 0);
     }
 
-    function test_openEpoch_firstOneWaits24hAfterLaunch() public {
+    function test_openEpoch_firstOneWaits24hAfterLightingOpens() public {
         uint8[] memory tr = new uint8[](1);
         tr[0] = 1;
         _lightTracks(tr);
         _setRoutesAndSeal();
         _fundPots(1 ether, 0);
+        assertEq(conv.firstEpochAt(), lightingOpensAt + 24 hours, "first epoch = lighting opens + 24 h");
 
-        vm.warp(launchAt + 24 hours - 1);
+        vm.warp(lightingOpensAt + 24 hours - 1);
         vm.prank(executor);
-        vm.expectRevert(abi.encodeWithSelector(IQZConverter.TooEarly.selector, launchAt + 24 hours));
+        vm.expectRevert(abi.encodeWithSelector(IQZConverter.TooEarly.selector, lightingOpensAt + 24 hours));
         conv.openEpoch();
 
-        vm.warp(launchAt + 24 hours);
+        vm.warp(lightingOpensAt + 24 hours);
         _open();
-        assertEq(conv.trackPot(1), 1 ether);
+        assertEq(_potWeth(1), 1 ether);
 
         // later epochs: 60 s apart
         _fundPots(1 ether, 0);
@@ -142,19 +145,48 @@ contract ConverterTest is ConverterFixture {
         conv.openEpoch();
         vm.warp(block.timestamp + 1);
         _open();
-        assertEq(conv.trackPot(1), 2 ether);
+        assertEq(_potWeth(1), 2 ether);
     }
 
-    function test_openEpoch_neverBeforeLaunchIsKnown() public {
-        uint8[] memory tr = new uint8[](1);
-        tr[0] = 1;
-        _lightTracks(tr);
-        _setRoutesAndSeal();
-        curve.setLaunchAt(0);
-        _fundPots(1 ether, 0);
-        vm.prank(executor);
-        vm.expectRevert(abi.encodeWithSelector(IQZConverter.TooEarly.selector, type(uint64).max));
-        conv.openEpoch();
+    /// @dev The first allowed epoch is fixed at deployment from the Forge's lighting time; no curve is consulted.
+    function test_openEpoch_firstEpochClockIsFixedAtDeployment() public {
+        assertEq(conv.firstEpochAt(), uint256(lightingOpensAt) + QZConstants.FIRST_OPEN_EPOCH_DELAY);
+        QZConverter other = new QZConverter(
+            QZConverter.Config({
+                owner: owner,
+                pauser: pauser,
+                keeper: keeper,
+                executor: executor,
+                weth: address(weth),
+                usdg: address(usdg),
+                v3Factory: address(v3),
+                v3Router: address(v3),
+                poolManager: address(pm),
+                vault: address(vault),
+                lightingOpensAt: 12345
+            })
+        );
+        assertEq(other.firstEpochAt(), 12345 + QZConstants.FIRST_OPEN_EPOCH_DELAY);
+    }
+
+    /// A zero `lightingOpensAt` would start both clocks at the epoch: the constructor refuses it.
+    function test_constructor_revertsOnZeroLightingOpensAt() public {
+        vm.expectRevert(IQZErrors.ZeroAmount.selector);
+        new QZConverter(
+            QZConverter.Config({
+                owner: owner,
+                pauser: pauser,
+                keeper: keeper,
+                executor: executor,
+                weth: address(weth),
+                usdg: address(usdg),
+                v3Factory: address(v3),
+                v3Router: address(v3),
+                poolManager: address(pm),
+                vault: address(vault),
+                lightingOpensAt: 0
+            })
+        );
     }
 
     function test_openEpoch_splitsOnlyOverTracksWithStandardWeight() public {
@@ -164,41 +196,51 @@ contract ConverterTest is ConverterFixture {
         _lightTracks(tr);
         // a lit relic does not make an empty track active
         machine.set(2221, alice, 0, 0, true);
-        vault.onHardwire(2221);
+        vault.register(2221);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours);
-        _fundPots(3 ether, 1 ether);
-        circuit.setRedirected(false);
-        circuit.fundCircuit(5 ether); // not redirected: must stay in the circuit
+        vm.warp(lightingOpensAt + 24 hours);
+        _fundPots(3 ether, 2000e6);
 
         vm.expectEmit(false, false, false, true, address(conv));
-        emit IQZConverter.PotsPulled(3 ether, 1 ether, 0);
+        emit IQZConverter.EthWrapped(3 ether);
         vm.expectEmit(false, false, false, true, address(conv));
-        emit IQZConverter.EpochOpened(4 ether, uint16((1 << 2) | (1 << 5)));
+        emit IQZConverter.EpochOpened(3 ether, 2000e6, uint16((1 << 2) | (1 << 5)));
         _open();
 
         for (uint8 t; t < 10; ++t) {
-            uint256 expected = (t == 2 || t == 5) ? 2 ether : 0;
-            assertEq(conv.trackPot(t), expected, "track share");
+            bool active = t == 2 || t == 5;
+            assertEq(_potWeth(t), active ? 1.5 ether : 0, "track WETH share");
+            assertEq(_potUsdg(t), active ? 1000e6 : 0, "track USDG share");
         }
-        assertEq(conv.totalTrackPot(), 4 ether);
-        assertEq(circuit.circuitPot(), 5 ether);
+        assertEq(conv.totalTrackWeth(), 3 ether);
+        assertEq(conv.totalTrackUsdg(), 2000e6);
+        (uint256 eth, uint256 w, uint256 u) = conv.unassignedPot();
+        assertEq(eth, 0, "all ETH wrapped");
+        assertEq(w, 0);
+        assertEq(u, 0);
+        (eth, w, u) = conv.potBalance();
+        assertEq(eth, 0);
+        assertEq(w, 3 ether);
+        assertEq(u, 2000e6);
     }
 
-    function test_openEpoch_circuitRedirectIsPulledIn() public {
+    /// @dev A donated WETH balance and a donated USDG balance join the pot like the splitter's ETH.
+    function test_openEpoch_wrapsEthAndCountsDonatedBalances() public {
         uint8[] memory tr = new uint8[](1);
         tr[0] = 3;
         _lightTracks(tr);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours);
-        circuit.setRedirected(true);
-        circuit.fundCircuit(2 ether);
-        _fundPots(1 ether, 0);
-
-        vm.expectEmit(false, false, false, true, address(conv));
-        emit IQZConverter.PotsPulled(1 ether, 0, 2 ether);
+        vm.warp(lightingOpensAt + 24 hours);
+        weth.mint(address(conv), 2 ether);
+        _fundPots(1 ether, 500e6);
+        (uint256 eth, uint256 w, uint256 u) = conv.unassignedPot();
+        assertEq(eth, 1 ether);
+        assertEq(w, 2 ether);
+        assertEq(u, 500e6);
         _open();
-        assertEq(conv.trackPot(3), 3 ether);
+        assertEq(_potWeth(3), 3 ether);
+        assertEq(_potUsdg(3), 500e6);
+        assertEq(address(conv).balance, 0);
     }
 
     function test_openEpoch_divisionRemainderRollsIntoNextEpoch() public {
@@ -207,18 +249,41 @@ contract ConverterTest is ConverterFixture {
         tr[1] = 1;
         _lightTracks(tr);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours);
+        vm.warp(lightingOpensAt + 24 hours);
         _fundPots(7, 0);
         _open();
-        assertEq(conv.trackPot(0), 3);
-        assertEq(conv.trackPot(1), 3);
+        assertEq(_potWeth(0), 3);
+        assertEq(_potWeth(1), 3);
         assertEq(weth.balanceOf(address(conv)), 7);
 
         _fundPots(1, 0);
         vm.warp(block.timestamp + 60);
         _open();
-        assertEq(conv.trackPot(0), 4, "remainder carried: (1 + 1) / 2 added");
-        assertEq(conv.trackPot(1), 4);
+        assertEq(_potWeth(0), 4, "remainder carried: (1 + 1) / 2 added");
+        assertEq(_potWeth(1), 4);
+    }
+
+    function test_openEpoch_usdgRemainderRollsIntoNextEpoch() public {
+        uint8[] memory tr = new uint8[](3);
+        tr[0] = 0;
+        tr[1] = 1;
+        tr[2] = 2;
+        _lightTracks(tr);
+        _setRoutesAndSeal();
+        vm.warp(lightingOpensAt + 24 hours);
+        _fundPots(0, 10);
+        _open();
+        assertEq(_potUsdg(0), 3);
+        assertEq(_potUsdg(2), 3);
+        assertEq(conv.totalTrackUsdg(), 9);
+        (,, uint256 left) = conv.unassignedPot();
+        assertEq(left, 1);
+
+        _fundPots(0, 5);
+        vm.warp(block.timestamp + 60);
+        _open();
+        assertEq(_potUsdg(0), 5, "3 + (1 + 5) / 3");
+        assertEq(conv.totalTrackUsdg(), 15);
     }
 
     /// U4.3 (Reviewer A L-2): with nothing to allocate the executor's call is a heartbeat, not a revert (it used to be
@@ -229,11 +294,11 @@ contract ConverterTest is ConverterFixture {
         tr[1] = 1;
         _lightTracks(tr);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours);
+        vm.warp(lightingOpensAt + 24 hours);
         _fundPots(1, 0); // 1 wei over 2 tracks: share 0
         vm.prank(executor);
         conv.openEpoch();
-        assertEq(conv.totalTrackPot(), 0);
+        assertEq(conv.totalTrackWeth(), 0);
         assertEq(conv.lastOpenEpoch(), 0, "no epoch was opened");
     }
 
@@ -281,7 +346,7 @@ contract ConverterTest is ConverterFixture {
         _readyForConvert(tr, 10);
         _fundPots(1 ether, 0);
         _open();
-        assertEq(conv.trackPot(t), 1 ether);
+        assertEq(_potWeth(t), 1 ether);
 
         uint256 wethIn = 0.5 ether;
         uint160 spotBefore = _spot(t);
@@ -298,8 +363,8 @@ contract ConverterTest is ConverterFixture {
             }
         }
 
-        assertEq(conv.trackPot(t), 0.5 ether);
-        assertEq(conv.totalTrackPot(), 0.5 ether);
+        assertEq(_potWeth(t), 0.5 ether);
+        assertEq(conv.totalTrackWeth(), 0.5 ether);
         uint256 got = vault.totalNotified(t);
         assertGt(got, 0);
         assertEq(stocks[t].balanceOf(address(vault)), got, "stock sits in the vault");
@@ -432,13 +497,13 @@ contract ConverterTest is ConverterFixture {
         tr[0] = 1;
         _lightTracks(tr);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours - 20 minutes);
+        vm.warp(lightingOpensAt + 24 hours - 20 minutes);
         // the keeper's observations see a pool that pays 2.9% MORE stock per USDG than the pool pays now
         uint160 honest = _spot(1);
         _shiftStockPerUsdg(1, 288);
         _pokeKeeper(1, 10);
         _setSpot(1, honest);
-        vm.warp(launchAt + 24 hours + 1);
+        vm.warp(lightingOpensAt + 24 hours + 1);
         _fundPots(1 ether, 0);
         _open();
 
@@ -456,12 +521,12 @@ contract ConverterTest is ConverterFixture {
         tr[0] = 0;
         _lightTracks(tr);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours - 20 minutes);
+        vm.warp(lightingOpensAt + 24 hours - 20 minutes);
         uint160 honest = _spot(0);
         _shiftStockPerUsdg(0, 100);
         _pokeKeeper(0, 10);
         _setSpot(0, honest);
-        vm.warp(launchAt + 24 hours + 1);
+        vm.warp(lightingOpensAt + 24 hours + 1);
         _fundPots(1 ether, 0);
         _open();
         _convert(0, 0.5 ether);
@@ -541,7 +606,7 @@ contract ConverterTest is ConverterFixture {
         tr[0] = 0;
         _lightTracks(tr);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours - 20 minutes);
+        vm.warp(lightingOpensAt + 24 hours - 20 minutes);
         uint160 honest = _spot(0);
         for (uint256 i; i < 10; ++i) {
             bool bad = i % 5 == 1 || i % 5 == 3; // 4 of 10
@@ -554,7 +619,7 @@ contract ConverterTest is ConverterFixture {
         assertEq(n, 10);
         assertEq(med, honest, "median untouched by the 4 manipulated observations");
 
-        vm.warp(launchAt + 24 hours + 1);
+        vm.warp(lightingOpensAt + 24 hours + 1);
         _fundPots(1 ether, 0);
         _open();
         _convert(0, 0.5 ether);
@@ -567,7 +632,7 @@ contract ConverterTest is ConverterFixture {
         tr[0] = 0;
         _lightTracks(tr);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours - 20 minutes);
+        vm.warp(lightingOpensAt + 24 hours - 20 minutes);
         uint160 honest = _spot(0);
         for (uint256 i; i < 10; ++i) {
             bool bad = i < 6;
@@ -578,7 +643,7 @@ contract ConverterTest is ConverterFixture {
         }
         (uint160 med,) = conv.medianPrice(0);
         assertTrue(med != honest, "majority moves the median");
-        vm.warp(launchAt + 24 hours + 1);
+        vm.warp(lightingOpensAt + 24 hours + 1);
         _fundPots(1 ether, 0);
         _open();
         vm.prank(executor);
@@ -591,11 +656,11 @@ contract ConverterTest is ConverterFixture {
 
     function test_median_evenCountAveragesMiddlePair() public {
         _setRoutesAndSeal();
-        vm.warp(launchAt + 1 hours);
+        vm.warp(lightingOpensAt + 1 hours);
         uint160 p0 = _spot(0);
         _poke(0);
         _setSpot(0, p0 + 100);
-        vm.warp(block.timestamp + 10);
+        vm.warp(block.timestamp + 60);
         _poke(0);
         (uint160 med, uint256 n) = conv.medianPrice(0);
         assertEq(n, 2);
@@ -607,17 +672,16 @@ contract ConverterTest is ConverterFixture {
 
     function _enterFallback() internal {
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours + 1 days + 1);
+        vm.warp(lightingOpensAt + 24 hours + 1 days + 1);
         assertTrue(conv.fallbackMode());
     }
 
-    function test_fallback_isOffBeforeLaunchAndOnAfterDaySilence() public {
-        assertFalse(conv.fallbackMode(), "launch time known but in the future");
-        curve.setLaunchAt(0);
-        vm.warp(T0 + 100 days);
-        assertFalse(conv.fallbackMode(), "not started");
-        curve.setLaunchAt(launchAt);
-        assertTrue(conv.fallbackMode());
+    function test_fallback_isOffBeforeLightingAndOnAfterDaySilence() public {
+        assertFalse(conv.fallbackMode(), "lighting opens in the future");
+        vm.warp(lightingOpensAt + 24 hours);
+        assertFalse(conv.fallbackMode(), "exactly 24 h of silence is not more than 24 h");
+        vm.warp(lightingOpensAt + 24 hours + 1);
+        assertTrue(conv.fallbackMode(), "the keeper has been silent for more than 24 h since lighting opened");
     }
 
     function test_fallback_pokeIsPermissionlessWithFiveMinuteSpacing() public {
@@ -703,7 +767,7 @@ contract ConverterTest is ConverterFixture {
             vm.warp(block.timestamp + 1 days);
         }
         assertEq(totalConverted, 3 * CAP, "3 days cost 3 caps, no more");
-        assertEq(conv.trackPot(0), 10 ether - 3 * CAP);
+        assertEq(_potWeth(0), 10 ether - 3 * CAP);
     }
 
     function test_fallback_cappedConvertSplitAcrossCalls() public {
@@ -734,8 +798,10 @@ contract ConverterTest is ConverterFixture {
         _enterFallback();
         _honestSpot[0] = _spot(0);
         _fundPots(1 ether, 0);
-        // the executor acts now: only the keeper side stays silent
+        // the executor acts now (a real conversion): only the keeper side stays silent
         _open();
+        _fallbackObservations(0, false);
+        _convert(0, CAP);
         _fallbackObservations(0, true);
         assertTrue(conv.fallbackMode());
 
@@ -757,12 +823,12 @@ contract ConverterTest is ConverterFixture {
         _lightTracks(tr);
         _setRoutesAndSeal();
         // keeper alive, executor silent
-        vm.warp(launchAt + 24 hours - 1 hours);
+        vm.warp(lightingOpensAt + 24 hours - 1 hours);
         _pokeKeeper(0, 1);
-        vm.warp(launchAt + 24 hours + 12 hours);
+        vm.warp(lightingOpensAt + 24 hours + 12 hours);
         _pokeKeeper(0, 1);
         assertFalse(conv.fallbackMode());
-        vm.warp(launchAt + 24 hours + 24 hours + 1);
+        vm.warp(lightingOpensAt + 24 hours + 24 hours + 1);
         _pokeKeeper(0, 1);
         assertTrue(conv.fallbackMode(), "executor silent for 24 h after the first allowed open");
     }
@@ -775,23 +841,25 @@ contract ConverterTest is ConverterFixture {
         tr[1] = 1;
         _lightTracks(tr);
         _readyForConvert(tr, 10);
-        _fundPots(2 ether, 1 ether);
+        _fundPots(3 ether, 0);
         _open();
-        assertEq(weth.balanceOf(address(conv)), conv.totalTrackPot());
+        assertEq(weth.balanceOf(address(conv)), conv.totalTrackWeth());
         _convert(0, 0.5 ether);
         _convert(1, 0.4 ether);
-        assertEq(weth.balanceOf(address(conv)), conv.totalTrackPot());
-        assertEq(conv.trackPot(0), 1 ether);
-        assertEq(conv.trackPot(1), 1.1 ether);
-        // a pot smaller than the chunk limit caps the call
+        assertEq(weth.balanceOf(address(conv)), conv.totalTrackWeth());
+        assertEq(_potWeth(0), 1 ether);
+        assertEq(_potWeth(1), 1.1 ether);
+        // a pot smaller than the call is refused with the pot it has; an empty track is not active
         vm.startPrank(executor);
         conv.convert(1, 0.5 ether, 1, 1, block.timestamp + 1);
         conv.convert(1, 0.5 ether, 1, 1, block.timestamp + 1);
-        vm.expectRevert(abi.encodeWithSelector(IQZConverter.TrackNotActive.selector, uint8(1)));
+        vm.expectRevert(abi.encodeWithSelector(IQZConverter.PotTooSmall.selector, uint8(1), 0.5 ether, 0.1 ether));
         conv.convert(1, 0.5 ether, 1, 1, block.timestamp + 1);
         conv.convert(1, 0.1 ether, 1, 1, block.timestamp + 1);
+        vm.expectRevert(abi.encodeWithSelector(IQZConverter.TrackNotActive.selector, uint8(1)));
+        conv.convert(1, 0.1 ether, 1, 1, block.timestamp + 1);
         vm.stopPrank();
-        assertEq(conv.trackPot(1), 0);
+        assertEq(_potWeth(1), 0);
     }
 
     // ───────────── regressions from the C5 check (gross floors, rolling cap, no marginal limit) ─────────────
@@ -810,12 +878,12 @@ contract ConverterTest is ConverterFixture {
         tr[0] = 1;
         _lightTracks(tr);
         _setRoutesAndSeal();
-        vm.warp(launchAt + 24 hours - 20 minutes);
+        vm.warp(lightingOpensAt + 24 hours - 20 minutes);
         uint160 honest = _spot(1);
         _shiftStockPerUsdg(1, 248);
         _pokeKeeper(1, 10);
         _setSpot(1, honest);
-        vm.warp(launchAt + 24 hours + 1);
+        vm.warp(lightingOpensAt + 24 hours + 1);
         _fundPots(1 ether, 0);
         _open();
         vm.prank(executor);

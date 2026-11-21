@@ -138,14 +138,3 @@ export function parseIntegerConstants(
   }
   return out;
 }
-
-/** `Hooks.sol` flag table: `uint160 internal constant NAME_FLAG = uint160(1 << N);` -> `Hooks.NAME_FLAG`. */
-export function parseHookFlags(hooksSource: string): Map<string, bigint> {
-  const flags = new Map<string, bigint>();
-  for (const m of stripSolComments(hooksSource).matchAll(
-    /uint160\s+internal\s+constant\s+(\w+_FLAG)\s*=\s*(?:uint160\()?1\s*<<\s*(\d+)\)?\s*;/g,
-  )) {
-    flags.set(`Hooks.${m[1]}`, 1n << BigInt(m[2] as string));
-  }
-  return flags;
-}

@@ -1,9 +1,9 @@
-// Rewrites the generated blocks of docs/CONTRACT.md (event catalog, route table) from the SDK sources.
+// Rewrites the generated blocks of docs/CONTRACT.md (event topics, route table, constants) from the SDK sources.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as K from '../src/generated/constants.ts';
+import * as K from '../src/constants.ts';
 import { API_PREFIX, routes } from '../src/api.ts';
-import { eventCatalog } from '../src/events.ts';
+import { modelBEventTopics } from '../src/generated/model-b/topics.ts';
 
 const block = (name: string, body: string) => ({
   begin: `<!-- BEGIN GENERATED: ${name} -->`,
@@ -12,21 +12,18 @@ const block = (name: string, body: string) => ({
 });
 
 export function renderEvents(): string {
-  const lines = ['| Contract | Event | Fields | Emitted when | Indexer table | Screens |', '|---|---|---|---|---|---|'];
-  for (const e of eventCatalog) {
-    const fields = e.fields.map((f) => `${f.type}${f.indexed ? ' indexed' : ''} ${f.name}`.trim()).join(', ');
-    const name = `${e.name}${e.r2 ? ' (R2)' : ''}`;
-    lines.push(
-      `| ${e.contract} | ${name} | ${fields || '-'} | ${e.when} | \`chain.${e.table}\` | ${e.screens.join(', ') || '-'} |`,
-    );
+  const lines = ['| Contract | Event | Signature | topic0 |', '|---|---|---|---|'];
+  for (const [key, e] of Object.entries(modelBEventTopics)) {
+    const [contract, event] = key.split('.') as [string, string];
+    lines.push(`| ${contract} | ${event} | \`${e.signature}\` | \`${e.topic0}\` |`);
   }
   return lines.join('\n');
 }
 
 export function renderRoutes(): string {
-  const lines = ['| Route | Query | Response type | Screens | Summary |', '|---|---|---|---|---|'];
+  const lines = ['| Route | Query | Response type | Summary |', '|---|---|---|---|'];
   for (const [name, r] of Object.entries(routes)) {
-    lines.push(`| \`GET ${API_PREFIX}${r.path}\` | see \`RouteQuery<'${name}'>\` | \`RouteResponse<'${name}'>\` | ${r.screens.join(', ')} | ${r.summary} |`);
+    lines.push(`| \`GET ${API_PREFIX}${r.path}\` | see \`RouteQuery<'${name}'>\` | \`RouteResponse<'${name}'>\` | ${r.summary} |`);
   }
   return lines.join('\n');
 }

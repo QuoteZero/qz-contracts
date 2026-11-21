@@ -15,17 +15,24 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 import {IQZConverter} from "../interfaces/IQZConverter.sol";
 import {IQZRewardVault} from "../interfaces/IQZRewardVault.sol";
-import {IQZCurve} from "../interfaces/IQZCurve.sol";
-import {IQZHook} from "../interfaces/IQZHook.sol";
-import {IQZCircuit} from "../interfaces/IQZCircuit.sol";
+import {IWETH9} from "../interfaces/IWETH9.sol";
 import {StockRoute} from "../lib/QZTypes.sol";
 import {QZConstants} from "../lib/QZConstants.sol";
 import {QZPriceMath, ISwapRouter02Min, IUniswapV3FactoryMin} from "./QZPriceMath.sol";
 
 /// @title QZConverter
-/// @notice Turns the reward-pot WETH into stock tokens outside any swap callback and hands them to `QZRewardVault`
-///         (SPEC §3.2, T15). Route: WETH -> USDG on the Uniswap v3 pool (SwapRouter02), USDG -> stock on the v4 pool
-///         of the track's sealed route.
+/// @notice Turns the reward pot into stock tokens outside any swap callback and hands them to `QZRewardVault`
+///         (SPEC Model B, B.3, B.5; §3.2).
+///
+///         Two sources fill the pot and nothing else does (donations aside): the ETH the fee splitter sends through
+///         `receive()` and the USDG the machine mint sends (25% of the mint money). `openEpoch` wraps the ETH and
+///         splits every WETH and every USDG not yet assigned equally over the tracks with standard weight lit; each
+///         track keeps its own WETH pot and USDG pot.
+///
+///         Two routes to stock, both outside any callback:
+///         - `convert`: WETH -> USDG on the Uniswap v3 pool (SwapRouter02), then USDG -> stock on the v4 pool of the
+///           track's sealed route.
+///         - `convertUsdg`: the second leg only, for the USDG pot.
 ///
 ///         Floors, both on-chain, the caller's `minOut` can only raise them:
 ///         - leg 1: `97% x TWAP(10 min)` of the v3 WETH/USDG pool. Gross: the v3 fee counts inside the 3%.
@@ -33,21 +40,23 @@ import {QZPriceMath, ISwapRouter02Min, IUniswapV3FactoryMin} from "./QZPriceMath
 ///           counts inside the 3%, so a 3% pool never converts.
 ///           The v4 pool has no oracle, so keepers record observations with `poke`:
 ///           normal mode: keeper only, median of >= 9 keeper observations in the last 30 min;
-///           fallback mode (the keeper or the executor silent for more than 24 h): `poke` and `convert` are open to
-///           everyone, observations are >= 5 min apart, the median needs 25 of them, and a track converts at most
-///           `fallbackDailyCap` WETH per rolling day. An attacker who owns every observation in fallback mode therefore
-///           loses at most that cap per day and track.
-///         `convert` also reverts when the pool spot price deviates more than 3% from that median.
+///           fallback mode (the keeper or the executor silent for more than 24 h): `poke`, `convert` and
+///           `convertUsdg` are open to everyone, observations are >= 5 min apart, the median needs 25 of them, and a
+///           track converts at most `fallbackDailyCap` WETH per rolling day. An attacker who owns every observation in
+///           fallback mode therefore loses at most that cap per day and track.
+///         Both functions also revert when the pool spot price deviates more than 3% from that median.
 ///
-///         C5 decisions where the spec is silent: the 97% floor is gross, it does not add the LP fee on top (the fee
+///         `maxChunk` and `fallbackDailyCap` are WETH amounts. A `convertUsdg` call is measured in WETH at the v3
+///         TWAP (rounded up), so one limit governs both routes and one cap ring serves both.
+///
+///         Decisions where the spec is silent: the 97% floor is gross, it does not add the LP fee on top (the fee
 ///         tiers of the stock pools run from 0.212% to 3%, so the fee and the price impact share one 3% budget);
-///         `owner`, `keeper`, `executor` and `pauser` are immutable; the liveness clocks of both roles start at
-///         `launchAt` (keeper) and `launchAt + 24 h` (executor, the first allowed `openEpoch`).
-///
-///         U4.3 review fixes: the executor's `openEpoch` with nothing to allocate (no fresh WETH, or only relics lit)
-///         succeeds as a heartbeat, so a quiet day is not a dead executor; a fallback conversion must spend at least
-///         `cap / 32` so that 32 live slots mean the cap is spent; `setRoute` refuses hooked pools and limits above the
-///         spec values.
+///         `owner`, `keeper`, `executor` and `pauser` are immutable; the liveness clocks of both roles start at the
+///         moment lighting opens (keeper) and 24 h later, the first allowed `openEpoch` (executor); only a `convert`
+///         or `convertUsdg` of at least the fallback minimum chunk refreshes the executor clock, `openEpoch` does not
+///         (a heartbeat must not keep the fallback off); observations are spaced by 60 s (normal mode) or 5 min
+///         (fallback); a fallback conversion must spend at least `cap / 32` so that 32 live
+///         slots mean the cap is spent; `setRoute` refuses hooked pools and limits above the spec values.
 contract QZConverter is IQZConverter, IUnlockCallback {
     using SafeERC20 for IERC20;
     using StateLibrary for IPoolManager;
@@ -70,8 +79,10 @@ contract QZConverter is IQZConverter, IUnlockCallback {
     uint256 internal constant RING = 64;
     /// @dev bit 224 of a packed observation: recorded by the keeper
     uint256 internal constant KEEPER_BIT = 1 << 224;
+    /// @dev Minimum spacing between two observations of a track in normal mode (fallback uses 5 min).
+    uint64 internal constant KEEPER_MIN_OBSERVATION_SPACING = 60 seconds;
     uint256 internal constant PIPS = 1_000_000;
-    /// @dev C5 decision: fallback observations older than 2 x the 2 h span do not count.
+    /// @dev fallback observations older than 2 x the 2 h span do not count.
     uint64 internal constant FALLBACK_MAX_AGE = 2 * QZConstants.FALLBACK_WINDOW;
 
     // ───────────── immutables ─────────────
@@ -86,11 +97,10 @@ contract QZConverter is IQZConverter, IUnlockCallback {
     address public immutable v3Router;
     address public immutable poolManager;
     address public immutable vault;
-    address public immutable hook;
-    address public immutable curve;
-    /// @dev may be `address(0)` (R1 without Circuit wired): then no circuit pull happens.
-    address public immutable circuit;
-    uint64 internal immutable _deployedAt;
+    /// @inheritdoc IQZConverter
+    uint64 public immutable firstEpochAt;
+    /// @dev the moment `QZForge.light` opens; the keeper's liveness clock starts here
+    uint64 internal immutable _lightingOpensAt;
 
     /// @notice Everything `owner`/roles/sinks the converter is wired to.
     struct Config {
@@ -104,9 +114,8 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         address v3Router;
         address poolManager;
         address vault;
-        address hook;
-        address curve;
-        address circuit;
+        /// @dev `QZForge.lightingOpensAt()`; `firstEpochAt` is this plus 24 h
+        uint64 lightingOpensAt;
     }
 
     // ───────────── storage ─────────────
@@ -123,8 +132,11 @@ contract QZConverter is IQZConverter, IUnlockCallback {
     address[10] internal _v3Pool;
     uint16 internal _routesSet;
 
-    uint256 public totalTrackPot;
-    mapping(uint8 track => uint256) public trackPot;
+    /// @notice Sum of every track's WETH / USDG pot. What the converter holds beyond these is unassigned.
+    uint256 public totalTrackWeth;
+    uint256 public totalTrackUsdg;
+    mapping(uint8 track => uint256) internal _potWeth;
+    mapping(uint8 track => uint256) internal _potUsdg;
 
     mapping(uint8 track => uint256[64]) internal _ring;
     mapping(uint8 track => uint256) internal _obsCount;
@@ -136,8 +148,9 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         if (
             c.owner == address(0) || c.pauser == address(0) || c.keeper == address(0) || c.executor == address(0)
                 || c.weth == address(0) || c.usdg == address(0) || c.v3Factory == address(0) || c.v3Router == address(0)
-                || c.poolManager == address(0) || c.vault == address(0) || c.hook == address(0) || c.curve == address(0)
+                || c.poolManager == address(0) || c.vault == address(0)
         ) revert ZeroAddress();
+        if (c.lightingOpensAt == 0) revert ZeroAmount();
         owner = c.owner;
         pauser = c.pauser;
         keeper = c.keeper;
@@ -148,10 +161,8 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         v3Router = c.v3Router;
         poolManager = c.poolManager;
         vault = c.vault;
-        hook = c.hook;
-        curve = c.curve;
-        circuit = c.circuit;
-        _deployedAt = uint64(block.timestamp);
+        _lightingOpensAt = c.lightingOpensAt;
+        firstEpochAt = c.lightingOpensAt + QZConstants.FIRST_OPEN_EPOCH_DELAY;
     }
 
     modifier nonReentrant() {
@@ -166,7 +177,10 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         _;
     }
 
-    // ───────────── pause (§4.2: stops openEpoch and convert only) ─────────────
+    /// @inheritdoc IQZConverter
+    receive() external payable {}
+
+    // ───────────── pause (stops openEpoch, convert and convertUsdg only) ─────────────
 
     function pause() external {
         if (msg.sender != pauser) revert NotPauser(msg.sender);
@@ -227,20 +241,51 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         return _routes[track];
     }
 
-    /// @notice The v3 WETH/USDG pool whose TWAP floors leg 1 of `track`.
+    /// @notice The v3 WETH/USDG pool whose TWAP floors leg 1 of `track` and measures `convertUsdg` against `maxChunk`.
     function v3PoolOf(uint8 track) external view returns (address) {
         return _v3Pool[track];
+    }
+
+    // ───────────── pot views ─────────────
+
+    /// @inheritdoc IQZConverter
+    function trackPot(uint8 track) external view returns (uint256 wethPot, uint256 usdgPot) {
+        return (_potWeth[track], _potUsdg[track]);
+    }
+
+    /// @inheritdoc IQZConverter
+    function unassignedPot() public view returns (uint256 eth, uint256 wethAmount, uint256 usdgAmount) {
+        eth = address(this).balance;
+        wethAmount = _unassigned(IERC20(weth).balanceOf(address(this)), totalTrackWeth);
+        usdgAmount = _unassigned(IERC20(usdg).balanceOf(address(this)), totalTrackUsdg);
+    }
+
+    /// @inheritdoc IQZConverter
+    function potBalance() external view returns (uint256 eth, uint256 wethAmount, uint256 usdgAmount) {
+        return (address(this).balance, IERC20(weth).balanceOf(address(this)), IERC20(usdg).balanceOf(address(this)));
+    }
+
+    /// @notice The most USDG one `convertUsdg` call may spend on `track`: `maxChunk` WETH at the v3 TWAP, rounded down.
+    function usdgChunkLimit(uint8 track) external view returns (uint256) {
+        if (track >= TRACKS) revert BadTrack(track);
+        if (!routesSealed) revert RoutesNotSealed();
+        return QZPriceMath.quote(_routes[track].maxChunk, _twapX128(track), weth < usdg);
+    }
+
+    /// @dev Balance beyond the assigned pots. Saturates: if a token issuer ever removed funds from here the next
+    ///      `openEpoch` still runs and the shortfall is absorbed by the next deposits instead of wedging the epoch.
+    function _unassigned(uint256 balance, uint256 assigned) private pure returns (uint256) {
+        return balance > assigned ? balance - assigned : 0;
     }
 
     // ───────────── liveness ─────────────
 
     /// @notice True when the keeper or the executor has been silent for more than 24 h since `max(last action,
-    ///         launchAt [+ 24 h for the executor])`. Before `launchAt` is known it is false.
+    ///         lighting opens [+ 24 h for the executor])`. Executor activity is a conversion of at least `cap / 32`
+    ///         WETH; `openEpoch` is not activity, so pots that stay unconverted for 24 h open the fallback.
     function fallbackMode() public view returns (bool) {
-        uint64 launch = IQZCurve(curve).launchAt();
-        if (launch == 0) return false;
-        uint64 keeperSince = _max(_lastKeeperPoke, launch);
-        uint64 executorSince = _max(_lastExecutorAction, launch + QZConstants.FIRST_OPEN_EPOCH_DELAY);
+        uint64 keeperSince = _max(_lastKeeperPoke, _lightingOpensAt);
+        uint64 executorSince = _max(_lastExecutorAction, firstEpochAt);
         return block.timestamp > uint256(keeperSince) + QZConstants.FALLBACK_SILENCE
             || block.timestamp > uint256(executorSince) + QZConstants.FALLBACK_SILENCE;
     }
@@ -259,22 +304,19 @@ contract QZConverter is IQZConverter, IUnlockCallback {
     // ───────────── openEpoch ─────────────
 
     /// @inheritdoc IQZConverter
-    /// @dev Executor, or anyone in fallback mode. Distributes every WETH not yet assigned to a track (the pulled pots,
-    ///      a Circuit redirect, royalty WETH, last epoch's division remainder, donations) equally over the tracks with
-    ///      `W[t] > 0`, so no track without a standard machine ever gets a share (§2.5). It reverts `NoLitMachines`
-    ///      only when no machine at all is lit; with only relics lit, or no fresh WETH, there is nothing to allocate:
-    ///      the executor's call then succeeds as a liveness heartbeat and leaves every pot where it is, anyone else
-    ///      gets `ZeroAmount`.
+    /// @dev Executor, or anyone in fallback mode. Wraps the ETH held, then distributes every WETH and every USDG not
+    ///      yet assigned to a track (the splitter's ETH, the mint seed, donations, last epoch's division remainder)
+    ///      equally over the tracks with `W[t] > 0`, so no track without a standard machine ever gets a share (§2.5).
+    ///      It reverts `NoLitMachines` only when no machine at all is lit; with only relics lit, or nothing fresh,
+    ///      there is nothing to allocate: the executor's call then succeeds and changes nothing (it is not executor
+    ///      activity), anyone else gets `ZeroAmount`.
     function openEpoch() external nonReentrant whenNotPaused {
         bool fb = fallbackMode();
         if (!fb && msg.sender != executor) revert NotExecutor(msg.sender);
         _enterFallbackIfNeeded(fb);
         if (!routesSealed) revert RoutesNotSealed();
 
-        uint64 launch = IQZCurve(curve).launchAt();
-        uint64 notBefore = lastOpenEpoch == 0
-            ? (launch == 0 ? type(uint64).max : launch + QZConstants.FIRST_OPEN_EPOCH_DELAY)
-            : lastOpenEpoch + QZConstants.OPEN_EPOCH_INTERVAL;
+        uint64 notBefore = lastOpenEpoch == 0 ? firstEpochAt : lastOpenEpoch + QZConstants.OPEN_EPOCH_INTERVAL;
         if (block.timestamp < notBefore) revert TooEarly(notBefore);
 
         uint16 mask;
@@ -285,41 +327,44 @@ contract QZConverter is IQZConverter, IUnlockCallback {
                 ++active;
             }
         }
-        uint256 share;
-        if (active != 0) {
-            uint256 fromHook = IQZHook(hook).pullRewardPot();
-            uint256 fromCurve = IQZCurve(curve).pullRewardPot();
-            uint256 fromCircuit;
-            if (circuit != address(0) && IQZCircuit(circuit).redirected()) {
-                fromCircuit = IQZCircuit(circuit).pullCircuitPot();
-            }
-            emit PotsPulled(fromHook, fromCurve, fromCircuit);
-            share = (IERC20(weth).balanceOf(address(this)) - totalTrackPot) / active;
-        } else if (IQZRewardVault(vault).relicCount() == 0) {
-            revert NoLitMachines();
+        if (active == 0 && IQZRewardVault(vault).relicCount() == 0) revert NoLitMachines();
+
+        uint256 eth = address(this).balance;
+        if (eth != 0) {
+            IWETH9(weth).deposit{value: eth}();
+            emit EthWrapped(eth);
         }
-        if (share == 0) {
+
+        uint256 wethShare;
+        uint256 usdgShare;
+        if (active != 0) {
+            wethShare = _unassigned(IERC20(weth).balanceOf(address(this)), totalTrackWeth) / active;
+            usdgShare = _unassigned(IERC20(usdg).balanceOf(address(this)), totalTrackUsdg) / active;
+        }
+        if (wethShare == 0 && usdgShare == 0) {
             if (msg.sender != executor) revert ZeroAmount();
-            _lastExecutorAction = uint64(block.timestamp);
-            _leaveFallbackIfNeeded();
             return;
         }
         for (uint8 t; t < TRACKS; ++t) {
-            if (mask & (1 << t) != 0) trackPot[t] += share;
+            if (mask & (1 << t) != 0) {
+                _potWeth[t] += wethShare;
+                _potUsdg[t] += usdgShare;
+            }
         }
-        totalTrackPot += share * active;
+        totalTrackWeth += wethShare * active;
+        totalTrackUsdg += usdgShare * active;
         lastOpenEpoch = uint64(block.timestamp);
-        emit EpochOpened(share * active, mask);
-
-        if (msg.sender == executor) {
-            _lastExecutorAction = uint64(block.timestamp);
-            _leaveFallbackIfNeeded();
-        }
+        emit EpochOpened(wethShare * active, usdgShare * active, mask);
     }
 
     // ───────────── poke ─────────────
 
     /// @inheritdoc IQZConverter
+    /// @dev Observations are spaced: >= 60 s in normal mode, >= 5 min in fallback mode, against the newest
+    ///      observation of the track. Nine observations then span at least 8 minutes, so a keeper cannot set the
+    ///      median with nine pokes inside one transaction (or one block): the price it feeds must hold across
+    ///      eight minutes of other people's trades. 60 s fits the keeper's 3 minute mean poke interval and leaves
+    ///      room for the 9 observations inside the 30 minute window.
     function poke(uint8 track) external {
         bool fb = fallbackMode();
         bool isKeeper = msg.sender == keeper;
@@ -329,8 +374,9 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         if (!routesSealed) revert RoutesNotSealed();
 
         uint256 count = _obsCount[track];
-        if (fb && count != 0) {
-            uint64 notBefore = uint64(_ring[track][(count - 1) % RING]) + QZConstants.FALLBACK_MIN_OBSERVATION_SPACING;
+        if (count != 0) {
+            uint64 spacing = fb ? QZConstants.FALLBACK_MIN_OBSERVATION_SPACING : KEEPER_MIN_OBSERVATION_SPACING;
+            uint64 notBefore = uint64(_ring[track][(count - 1) % RING]) + spacing;
             if (block.timestamp < notBefore) revert TooEarly(notBefore);
         }
 
@@ -391,30 +437,81 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         nonReentrant
         whenNotPaused
     {
-        bool fb = fallbackMode();
-        if (!fb && msg.sender != executor) revert NotExecutor(msg.sender);
-        _enterFallbackIfNeeded(fb);
-        if (block.timestamp > deadline) revert DeadlineExpired(deadline, block.timestamp);
-        if (track >= TRACKS) revert BadTrack(track);
-        if (!routesSealed) revert RoutesNotSealed();
-        if (wethIn == 0) revert ZeroAmount();
-        StockRoute memory route = _routes[track];
+        (bool fb, StockRoute memory route) = _beginConversion(track, deadline, wethIn);
         if (wethIn > route.maxChunk) revert ChunkTooLarge(wethIn, route.maxChunk);
-        if (wethIn > trackPot[track]) revert TrackNotActive(track);
+        uint256 have = _potWeth[track];
+        if (wethIn > have) _revertPotShort(track, wethIn, have);
         if (fb) _spendFallbackCap(track, wethIn, route.fallbackDailyCap);
+
+        _potWeth[track] = have - wethIn;
+        totalTrackWeth -= wethIn;
 
         uint256 referenceX128 = _referencePrice(track, fb);
         uint256 usdgOut = _legWethToUsdg(track, route, wethIn, minUsdgOut);
         uint256 stockOut = _legUsdgToStock(track, route, usdgOut, referenceX128, minStockOut);
 
-        trackPot[track] -= wethIn;
-        totalTrackPot -= wethIn;
+        _notifyVault(track, route, stockOut);
+        emit Converted(track, wethIn, usdgOut, stockOut);
+        _executorDone(wethIn, route);
+    }
 
+    /// @inheritdoc IQZConverter
+    /// @dev Leg 2 only, for the USDG pot. The call is measured in WETH at the v3 TWAP (rounded up) against `maxChunk`
+    ///      and the fallback daily cap, so a USDG pot cannot be pushed through the pool faster than a WETH pot.
+    function convertUsdg(uint8 track, uint256 usdgIn, uint256 minStockOut, uint256 deadline)
+        external
+        nonReentrant
+        whenNotPaused
+    {
+        (bool fb, StockRoute memory route) = _beginConversion(track, deadline, usdgIn);
+        uint256 wethEquivalent = QZPriceMath.quoteRoundingUp(usdgIn, _twapX128(track), usdg < weth);
+        if (wethEquivalent > route.maxChunk) revert ChunkTooLarge(wethEquivalent, route.maxChunk);
+        uint256 have = _potUsdg[track];
+        if (usdgIn > have) _revertPotShort(track, usdgIn, have);
+        if (fb) _spendFallbackCap(track, wethEquivalent, route.fallbackDailyCap);
+
+        _potUsdg[track] = have - usdgIn;
+        totalTrackUsdg -= usdgIn;
+
+        uint256 referenceX128 = _referencePrice(track, fb);
+        uint256 stockOut = _legUsdgToStock(track, route, usdgIn, referenceX128, minStockOut);
+
+        _notifyVault(track, route, stockOut);
+        emit Converted(track, 0, usdgIn, stockOut);
+        _executorDone(wethEquivalent, route);
+    }
+
+    /// @dev Shared prologue: access, fallback flag, deadline, track, seal, non-zero amount.
+    function _beginConversion(uint8 track, uint256 deadline, uint256 amount)
+        internal
+        returns (bool fb, StockRoute memory route)
+    {
+        fb = fallbackMode();
+        if (!fb && msg.sender != executor) revert NotExecutor(msg.sender);
+        _enterFallbackIfNeeded(fb);
+        if (block.timestamp > deadline) revert DeadlineExpired(deadline, block.timestamp);
+        if (track >= TRACKS) revert BadTrack(track);
+        if (!routesSealed) revert RoutesNotSealed();
+        if (amount == 0) revert ZeroAmount();
+        route = _routes[track];
+    }
+
+    /// @dev A track that never received a share is `TrackNotActive`; one that holds less than asked is `PotTooSmall`.
+    function _revertPotShort(uint8 track, uint256 want, uint256 have) internal view {
+        if (_potWeth[track] == 0 && _potUsdg[track] == 0) revert TrackNotActive(track);
+        revert PotTooSmall(track, want, have);
+    }
+
+    function _notifyVault(uint8 track, StockRoute memory route, uint256 stockOut) internal {
         IERC20(route.stock).forceApprove(vault, stockOut);
         IQZRewardVault(vault).notify(track, stockOut);
-        emit Converted(track, wethIn, usdgOut, stockOut);
+    }
 
-        if (msg.sender == executor) {
+    /// @dev Only a conversion of at least the fallback minimum chunk (`cap / 32`, in WETH) by the executor counts as
+    ///      executor activity. `openEpoch` never does, so an executor that heartbeats `openEpoch` (or converts dust)
+    ///      cannot keep fallback mode off while the pots sit unconverted.
+    function _executorDone(uint256 wethEquivalent, StockRoute memory route) internal {
+        if (msg.sender == executor && wethEquivalent >= (route.fallbackDailyCap + CAP_SLOTS - 1) / CAP_SLOTS) {
             _lastExecutorAction = uint64(block.timestamp);
             _leaveFallbackIfNeeded();
         }
@@ -426,9 +523,8 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         internal
         returns (uint256 usdgOut)
     {
-        uint256 twapX128 = QZPriceMath.priceAtTick(QZPriceMath.twapTick(_v3Pool[track], QZConstants.V3_TWAP_WINDOW));
         uint256 floor_ =
-            QZPriceMath.quote(wethIn, twapX128, weth < usdg) * QZConstants.CONVERT_FLOOR_BPS / QZConstants.BPS;
+            QZPriceMath.quote(wethIn, _twapX128(track), weth < usdg) * QZConstants.CONVERT_FLOOR_BPS / QZConstants.BPS;
         if (minUsdgOut > floor_) floor_ = minUsdgOut;
 
         IERC20(weth).forceApprove(v3Router, wethIn);
@@ -474,6 +570,11 @@ contract QZConverter is IQZConverter, IUnlockCallback {
         }
         stockOut = IERC20(route.stock).balanceOf(address(this)) - before;
         if (stockOut < floor_) revert BelowFloor(stockOut, floor_);
+    }
+
+    /// @dev priceX128 of the v3 WETH/USDG pool over the last 10 minutes (token1 per token0, raw units).
+    function _twapX128(uint8 track) internal view returns (uint256) {
+        return QZPriceMath.priceAtTick(QZPriceMath.twapTick(_v3Pool[track], QZConstants.V3_TWAP_WINDOW));
     }
 
     /// @dev Reference price (priceX128) of the v4 pool: the median of the observations, after proving there are enough

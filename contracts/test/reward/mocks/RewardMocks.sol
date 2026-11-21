@@ -124,7 +124,8 @@ contract MockStock is MockERC20 {
     }
 }
 
-/// @notice Stand-in for `QZMachine` (unit C3 is built in parallel): ownership, transfer and the trait table the vault reads.
+/// @notice Stand-in for `QZMachine`: ownership, transfer and the trait table the vault reads. `traitsOf` reverts before
+///         the reveal like the real machine.
 contract MockMachine {
     struct M {
         address owner;
@@ -133,13 +134,24 @@ contract MockMachine {
         bool relic;
     }
 
+    error NotRevealed();
+
     mapping(uint256 => M) public machines;
+    mapping(uint256 => bool) public unrevealed;
 
     function set(uint256 id, address owner_, uint8 tier, uint8 track, bool relic) external {
         machines[id] = M(owner_, tier, track, relic);
+        unrevealed[id] = false;
+    }
+
+    /// @dev a minted token whose traits are not known yet
+    function setUnrevealed(uint256 id, address owner_) external {
+        machines[id] = M(owner_, 0, 0, false);
+        unrevealed[id] = true;
     }
 
     function traitsOf(uint256 id) external view returns (uint8, uint8, bool) {
+        if (unrevealed[id]) revert NotRevealed();
         M memory m = machines[id];
         return (m.tier, m.track, m.relic);
     }
@@ -156,46 +168,14 @@ contract MockMachine {
     }
 }
 
-/// @notice Mock hook/curve pot. `fund` records a WETH pot; `pullRewardPot` sends it to the caller.
-contract MockPot {
-    MockERC20 public immutable weth;
-    uint64 public launchAt;
-    uint256 public rewardPot;
-    bool public redirected;
-    uint256 public circuitPot;
+/// @notice WETH9 behaviour the converter needs: `deposit` wraps the ETH sent with the call one to one.
+contract MockWETH is MockERC20 {
+    constructor() MockERC20("Wrapped Ether", "WETH", 18) {}
 
-    constructor(MockERC20 weth_) {
-        weth = weth_;
-    }
-
-    function setLaunchAt(uint64 t) external {
-        launchAt = t;
-    }
-
-    function fund(uint256 amount) external {
-        weth.mint(address(this), amount);
-        rewardPot += amount;
-    }
-
-    function pullRewardPot() external returns (uint256 amount) {
-        amount = rewardPot;
-        rewardPot = 0;
-        weth.transfer(msg.sender, amount);
-    }
-
-    function setRedirected(bool r) external {
-        redirected = r;
-    }
-
-    function fundCircuit(uint256 amount) external {
-        weth.mint(address(this), amount);
-        circuitPot += amount;
-    }
-
-    function pullCircuitPot() external returns (uint256 amount) {
-        amount = circuitPot;
-        circuitPot = 0;
-        weth.transfer(msg.sender, amount);
+    function deposit() external payable {
+        balanceOf[msg.sender] += msg.value;
+        totalSupply += msg.value;
+        emit Transfer(address(0), msg.sender, msg.value);
     }
 }
 

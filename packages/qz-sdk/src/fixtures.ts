@@ -1,275 +1,147 @@
 // Typed fixtures, one per route response (the compiler checks them against the read-model types).
-// `npm run gen` writes them to fixtures/<route>.json; test/fixtures.test.ts fails if those files drift.
+// `npm run gen` writes them to fixtures/<route>.json; test/catalog.test.ts fails if those files drift.
 import type { RouteName, RouteResponse } from './api.ts';
-import { TRACKS, UNIT, WEIGHT_TIER_II } from './constants.ts';
-import { priceAt, progress, quoteBuy } from './curve.ts';
+import { PRICE_FCFS, PRICE_GTD, PRICE_PUBLIC, TRACKS, WEIGHT_TIER_II } from './constants.ts';
 
 // What the fixtures share is computed once, so a number that appears in two responses cannot disagree.
-/** The one curve trade of the fixtures: 1 ETH into an empty curve (the curve, its trade list, the token volume and the history all read it). */
-const TRADE_ETH = UNIT;
-const trade = quoteBuy({ sold: 0n, reserve: 0n }, TRADE_ETH);
-const boughtQz = (trade.qzOut * 100n) / UNIT;
-/** The history line the indexer writes for that trade: whole QZ and two places, rounded down. */
-const TRADE_DETAIL = `Bought ${boughtQz / 100n}.${String(boughtQz % 100n).padStart(2, '0')} QZ`;
 /**
  * The machine of the fixtures: machine 39, the first Relay on NVDA in metadata/traits.json. This file is bundled into the web app's
  * sample mode, so it cannot import the 2,222-row table; e2e/fixtures-consistency.test.ts (npm test) checks every field of M, and
  * every other machine field in this file, against that table.
  */
-const M = { id: 39, tier: 2, numeral: 'II', relic: false, track: 0, ticker: TRACKS[0], weight: Number(WEIGHT_TIER_II) } as const;
+const M = { id: 39, tier: 2, relic: false, track: 0, ticker: TRACKS[0], weight: Number(WEIGHT_TIER_II) } as const;
+const OWNER = '0x1111111111111111111111111111111111111111';
+const STOCK = '0x3333333333333333333333333333333333333333';
+const TX = '0xabababababababababababababababababababababababababababababababab';
 const PENDING = '1250000000000000';
-/** The Circuit pot of week 0 after its one finisher took part. */
-const CIRCUIT_AMOUNT = '2500000000000000';
-/** The machine finished its circuit in week 0: the machine page and the leaderboard row say the same. */
-const CIRCUIT = { week: 0, flags: 3, completed: true } as const;
+const MINT_TIME = 1763300100;
+const LIT_TIME = 1763511000;
+/** The one GTD mint of the fixtures, the machine above: its mint line, its history line and its machine page. */
+const MINT = { phase: 1, price: PRICE_GTD.toString(), txHash: TX } as const;
 
 export const fixtures = {
   status: {
-    "chainId": 4663,
-    "indexedBlock": 1200,
-    "headBlock": 1203,
-    "indexedAt": 1763300000,
-    "chainTime": 1763299990,
-    "phase": "F1",
-    "launchAt": 1763290000,
-    "buysPaused": false,
-    "corePaused": false,
-    "graduated": false,
-    "epoch": 42
+    chainId: 4663,
+    indexedBlock: 1203,
+    headBlock: 1203,
+    indexedAt: 1763520000,
+    chainTime: 1763520000,
+    phase: 'closed',
+    minted: 1,
+    finalized: true,
+    hashLocked: true,
+    revealed: true,
+    lit: 1,
+    paused: { machine: false, forge: false, converter: false },
   },
-  curve: {
-    "phase": "F1",
-    "launchAt": 1763290000,
-    "sold": trade.next.sold.toString(),
-    "reserve": trade.next.reserve.toString(),
-    "price": priceAt(trade.next.sold, trade.next.reserve).toString(),
-    "progressBps": Number(progress(trade.next.sold)),
-    "graduated": false,
-    "limits": {
-      "maxPerTx": "2000000000000000000",
-      "maxPerWallet": "10000000000000000000"
-    },
-    "totals": {
-      "trades": 1,
-      "ethVolume": TRADE_ETH.toString(),
-      "feesPaid": trade.fee.toString()
-    }
+  mint: {
+    chainTime: 1763520000,
+    phase: 'closed',
+    configured: true,
+    schedule: { start: 1763290000, gtdEnd: 1763376400, fcfsEnd: 1763419600, publicEnd: 1763506000 },
+    minted: 1,
+    maxSupply: 2222,
+    prices: { gtd: PRICE_GTD.toString(), fcfs: PRICE_FCFS.toString(), public: PRICE_PUBLIC.toString() },
+    volume: PRICE_GTD.toString(),
+    toConverter: ((PRICE_GTD * 25n) / 100n).toString(),
+    toTreasury: ((PRICE_GTD * 75n) / 100n).toString(),
+    paused: false,
+    finalized: true,
+    finalizedAt: 1763506100,
+    hashLocked: true,
+    lockedAt: 1763506200,
+    revealed: true,
+    revealedAt: 1763506400,
+    revealOffset: '1234',
+    recent: [{ machineId: M.id, minter: OWNER, ...MINT, blockNumber: 1201, timestamp: MINT_TIME }],
   },
-  curveTrades: {
-    "items": [
-      {
-        "txHash": "0xabababababababababababababababababababababababababababababababab",
-        "blockNumber": 1199,
-        "timestamp": 1763299900,
-        "side": "buy",
-        "account": "0x1111111111111111111111111111111111111111",
-        "recipient": "0x1111111111111111111111111111111111111111",
-        "ethAmount": TRADE_ETH.toString(),
-        "qzAmount": trade.qzOut.toString(),
-        "fee": trade.fee.toString(),
-        "phase": "F1"
-      }
-    ],
-    "nextCursor": null
-  },
-  tickets: {
-    "owner": "0x1111111111111111111111111111111111111111",
-    "tickets": [
-      {
-        "ticketId": 3,
-        "owner": "0x1111111111111111111111111111111111111111",
-        "status": "pending",
-        "epoch": 43,
-        "revealEta": 96,
-        "machineId": null,
-        "mintedAt": 1763299900
-      },
-      {
-        "ticketId": 2,
-        "owner": "0x1111111111111111111111111111111111111111",
-        "status": "revealed",
-        "epoch": 41,
-        "revealEta": null,
-        "machineId": M.id,
-        "mintedAt": 1763299700
-      }
-    ],
-    "skipNft": false
+  light: {
+    lightAmount: '100000000000000000000000',
+    lit: 1,
+    paused: false,
+    revealed: true,
+    opensAt: 1763510000,
+    forge: '0x4444444444444444444444444444444444444444',
+    token: '0x5555555555555555555555555555555555555555',
+    machines: [{ id: M.id, lit: true, litAt: LIT_TIME, canLight: false }],
   },
   machines: {
-    "items": [
-      {
-        "id": M.id,
-        "tier": M.tier,
-        "relic": M.relic,
-        "track": M.track,
-        "ticker": M.ticker,
-        "owner": "0x1111111111111111111111111111111111111111",
-        "eid": 30416,
-        "hardwired": true
-      }
-    ],
-    "nextCursor": null,
-    "total": 2222
+    items: [{ id: M.id, owner: OWNER, mintedAt: MINT_TIME, lit: true, litAt: LIT_TIME, tier: M.tier, relic: M.relic, track: M.track, ticker: M.ticker }],
+    nextCursor: null,
+    total: 1,
   },
   machine: {
-    "id": M.id,
-    "tier": M.tier,
-    "relic": M.relic,
-    "track": M.track,
-    "ticker": M.ticker,
-    "owner": "0x1111111111111111111111111111111111111111",
-    "eid": 30416,
-    "hardwired": true,
-    "weight": M.weight,
-    "traits": [
-      {
-        "name": "Tier",
-        "value": M.numeral
-      },
-      {
-        "name": "Track",
-        "value": M.ticker
-      }
-    ],
-    "imageUrl": null,
-    "hardwiredAt": 1763299950,
-    "rewards": [
-      {
-        "machineId": M.id,
-        "track": M.track,
-        "ticker": M.ticker,
-        "stock": "0x3333333333333333333333333333333333333333",
-        "pending": PENDING,
-        "claimed": "0",
-        "frozen": false
-      }
-    ],
-    "circuit": {
-      "week": CIRCUIT.week,
-      "completed": CIRCUIT.completed,
-      "flags": CIRCUIT.flags
-    }
+    id: M.id,
+    owner: OWNER,
+    mintedAt: MINT_TIME,
+    lit: true,
+    litAt: LIT_TIME,
+    tier: M.tier,
+    relic: M.relic,
+    track: M.track,
+    ticker: M.ticker,
+    weight: M.weight,
+    mint: MINT,
+    rewards: [{ machineId: M.id, track: M.track, ticker: M.ticker, stock: STOCK, pending: PENDING, claimed: '0', frozen: false }],
   },
   rewards: {
-    "owner": "0x1111111111111111111111111111111111111111",
-    "positions": [
-      {
-        "machineId": M.id,
-        "track": M.track,
-        "ticker": M.ticker,
-        "stock": "0x3333333333333333333333333333333333333333",
-        "pending": PENDING,
-        "claimed": "0",
-        "frozen": false
-      }
-    ],
-    "totals": [
-      {
-        "ticker": M.ticker,
-        "stock": "0x3333333333333333333333333333333333333333",
-        "pending": PENDING
-      }
-    ]
+    owner: OWNER,
+    positions: [{ machineId: M.id, track: M.track, ticker: M.ticker, stock: STOCK, pending: PENDING, claimed: '0', frozen: false }],
+    totals: [{ ticker: M.ticker, stock: STOCK, pending: PENDING }],
   },
   rewardTracks: {
-    "tracks": [
+    tracks: [
       {
-        "track": M.track,
-        "ticker": M.ticker,
-        "stock": "0x3333333333333333333333333333333333333333",
-        "accPerWeight": "193198761",
-        "totalNotified": PENDING,
-        "frozen": false,
-        "frozenReason": null,
-        "lastNotifiedAt": 1763299990
-      }
+        track: M.track,
+        ticker: M.ticker,
+        stock: STOCK,
+        accPerWeight: '38640000000000000000000000000000000',
+        totalNotified: PENDING,
+        frozen: false,
+        frozenReason: null,
+        lastNotifiedAt: 1763300000,
+      },
     ],
-    "converter": {
-      "inFallback": false,
-      "paused": false,
-      "lastEpochOpenedAt": 1763299980
-    }
+    converter: { inFallback: false, paused: false, lastEpochOpenedAt: 1763299000 },
   },
-  circuitLeaderboard: {
-    "week": 0,
-    "startsAt": 1763290000,
-    "endsAt": 1763894800,
-    "settled": false,
-    "pot": CIRCUIT_AMOUNT,
-    "completers": 1,
-    "perMachine": null,
-    "entries": [
-      {
-        "rank": 1,
-        "machineId": M.id,
-        "owner": "0x1111111111111111111111111111111111111111",
-        "tier": M.tier,
-        "relic": M.relic,
-        "track": M.track,
-        "flags": CIRCUIT.flags,
-        "completed": CIRCUIT.completed,
-        "claimable": "0",
-        "claimed": false
-      }
-    ]
-  },
-  // Week 0 runs until launchAt + 1 week and nothing is claimable before a week settles, so the claim list is empty
-  // while the leaderboard above shows the machine finished.
-  circuitClaimable: {
-    "owner": "0x1111111111111111111111111111111111111111",
-    "items": [],
-    "total": "0"
-  },
-  token: {
-    "graduated": false,
-    "poolPrice": null,
-    "poolId": null,
-    "lockedLiquidity": null,
-    "volume24h": TRADE_ETH.toString(),
-    "fees": {
-      "hookWeth": "0",
-      "rewardPot": "0",
-      "lpCompounded": "0",
-      "circuitPot": "0"
-    },
-    "holders": 1
+  fees: {
+    harvested: '1000000000',
+    toConverter: '250000000',
+    toTreasury: '750000000',
+    treasuryParked: '0',
+    treasuryClaimed: '750000000',
+    epochsOpened: 1,
+    recent: [{ caller: OWNER, total: '1000000000', toConverter: '250000000', toTreasury: '750000000', txHash: TX, blockNumber: 1202, timestamp: 1763300200 }],
   },
   history: {
-    "address": "0x1111111111111111111111111111111111111111",
-    "items": [
+    address: OWNER,
+    items: [
       {
-        "kind": "curve_buy",
-        "txHash": "0xabababababababababababababababababababababababababababababababab",
-        "blockNumber": 1199,
-        "logIndex": 4,
-        "timestamp": 1763299900,
-        "amount": TRADE_ETH.toString(),
-        "machineId": null,
-        "ticketId": null,
-        "peerEid": null,
-        "peerChain": null,
-        "guid": null,
-        "detail": TRADE_DETAIL
-      }
+        kind: 'mint',
+        txHash: TX,
+        blockNumber: 1201,
+        logIndex: 3,
+        timestamp: MINT_TIME,
+        amount: PRICE_GTD.toString(),
+        machineId: M.id,
+        detail: `Minted machine #${M.id}`,
+      },
     ],
-    "nextCursor": null
+    nextCursor: null,
   },
   params: {
-    "owner": "0x2222222222222222222222222222222222222222",
-    "paused": {
-      "core": false,
-      "buys": false,
-      "hook": false,
-      "converter": false
+    owner: '0x2222222222222222222222222222222222222222',
+    treasury: '0x2222222222222222222222222222222222222222',
+    roles: {
+      pauser: '0x2222222222222222222222222222222222222222',
+      revealer: '0x2222222222222222222222222222222222222222',
+      keeper: '0x2222222222222222222222222222222222222222',
+      executor: '0x2222222222222222222222222222222222222222',
     },
-    "routesSealed": true,
-    "metadataFrozen": false,
-    "contracts": {
-      "QZCore": "0x3333333333333333333333333333333333333333"
-    },
-    "limits": {
-      "F0_MAX_PER_WALLET": "2000000000000000000"
-    }
+    paused: { machine: false, forge: false, converter: false },
+    routesSealed: true,
+    metadataFrozen: false,
+    contracts: { QZMachine: STOCK },
+    limits: { MAX_PER_WALLET: '1' },
   },
-} as const satisfies { [N in RouteName]: RouteResponse<N> };
+} satisfies { [N in RouteName]: RouteResponse<N> };

@@ -1,80 +1,43 @@
 // REST route table for the chain read API. All routes are GET, JSON, prefix `/api/chain`.
 import type {
   ChainStatus,
-  CircuitClaimable,
-  CircuitLeaderboard,
-  CurveStateView,
-  CurveTrade,
+  FeesView,
   HistoryResponse,
+  LightView,
   MachineDetail,
   MachinesResponse,
-  Page,
+  MintView,
   ParamsView,
   RewardsResponse,
-  TicketsResponse,
-  TokenStats,
   TracksResponse,
 } from './types.ts';
-import type { Screen } from './events.ts';
 
 export const API_PREFIX = '/api/chain';
 
 export interface Route<P extends string, Q, R> {
   readonly path: P;
-  readonly screens: readonly Screen[];
   readonly summary: string;
   /** Marker for types only. */
   readonly _types?: { query: Q; response: R };
 }
 
-const route = <P extends string, Q, R>(path: P, screens: readonly Screen[], summary: string): Route<P, Q, R> => ({
-  path,
-  screens,
-  summary,
-});
+const route = <P extends string, Q, R>(path: P, summary: string): Route<P, Q, R> => ({ path, summary });
 
 export const routes = {
-  status: route<'/status', {}, ChainStatus>('/status', ['trade', 'admin'], 'Index head, phase, pause flags'),
-  curve: route<'/curve', {}, CurveStateView>('/curve', ['trade', 'token'], 'Curve state: sold, reserve, price, progress, limits'),
-  curveTrades: route<'/curve/trades', { account?: string; limit?: number; cursor?: string }, Page<CurveTrade>>(
-    '/curve/trades',
-    ['trade', 'token'],
-    'Curve trades, newest first, optional account filter',
-  ),
-  tickets: route<'/tickets', { owner: string }, TicketsResponse>(
-    '/tickets',
-    ['machines'],
-    'Pending and revealed tickets of a wallet',
-  ),
+  status: route<'/status', {}, ChainStatus>('/status', 'Index head, chain clock, mint phase and pause flags'),
+  mint: route<'/mint', {}, MintView>('/mint', 'Mint schedule, prices, supply, volume split and the latest mints'),
+  light: route<'/light', { owner?: string }, LightView>('/light', 'Lighting state, optionally with the machines of a wallet'),
   machines: route<
     '/machines',
-    { owner?: string; tier?: number; track?: number; relic?: boolean; hardwired?: boolean; location?: number; limit?: number; cursor?: string },
+    { owner?: string; tier?: number; track?: number; relic?: boolean; lit?: boolean; limit?: number; cursor?: string },
     MachinesResponse
-  >('/machines', ['machines'], 'Machine gallery, filterable by owner, tier, track, relic, hardwired, location (LayerZero eid)'),
-  machine: route<'/machines/:id', {}, MachineDetail>('/machines/:id', ['machines', 'rewards', 'circuit'], 'One machine with rewards and Circuit state'),
-  rewards: route<'/rewards', { owner: string }, RewardsResponse>(
-    '/rewards',
-    ['rewards'],
-    'Claimable stock rewards per (machine, track) of a wallet',
-  ),
-  rewardTracks: route<'/rewards/tracks', {}, TracksResponse>('/rewards/tracks', ['rewards', 'admin'], 'Per-track accumulators and frozen state'),
-  circuitLeaderboard: route<'/circuit/leaderboard', { week?: number; limit?: number; cursor?: string }, CircuitLeaderboard>(
-    '/circuit/leaderboard',
-    ['circuit'],
-    'Weekly Circuit leaderboard and pot',
-  ),
-  circuitClaimable: route<'/circuit/claimable', { owner: string }, CircuitClaimable>(
-    '/circuit/claimable',
-    ['circuit'],
-    'Unclaimed Circuit WETH per (machine, week) of a wallet',
-  ),
-  token: route<'/token', {}, TokenStats>('/token', ['token'], 'Post-graduation token stats'),
-  history: route<'/history', { address: string; limit?: number; cursor?: string }, HistoryResponse>(
-    '/history',
-    ['history'],
-    'Per-address activity feed',
-  ),
-  params: route<'/params', {}, ParamsView>('/params', ['admin'], 'Read-only parameter and pause view'),
+  >('/machines', 'Machine gallery, filterable by owner, tier, track, relic and lit'),
+  machine: route<'/machines/:id', {}, MachineDetail>('/machines/:id', 'One machine with its mint and reward positions'),
+  rewards: route<'/rewards', { owner: string }, RewardsResponse>('/rewards', 'Claimable stock rewards per (machine, track) of a wallet'),
+  rewardTracks: route<'/rewards/tracks', {}, TracksResponse>('/rewards/tracks', 'Per-track accumulators, frozen state and converter status'),
+  fees: route<'/fees', {}, FeesView>('/fees', 'Harvested fees, the converter and treasury split, and the latest harvests'),
+  history: route<'/history', { address: string; limit?: number; cursor?: string }, HistoryResponse>('/history', 'Per-address activity feed'),
+  params: route<'/params', {}, ParamsView>('/params', 'Read-only parameter, role and pause view'),
 } as const;
 
 export type RouteName = keyof typeof routes;

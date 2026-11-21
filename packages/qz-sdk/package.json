@@ -2,7 +2,7 @@
   "name": "@qz/sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "QuoteZero shared contract: ABIs, event catalog, read-model and REST types, fixtures, deployments loader, curve math.",
+  "description": "QuoteZero shared contract: ABIs, event topics, read-model and REST types, fixtures, deployments loader.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -10,10 +10,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./abis": "./src/generated/abis/index.ts",
+    "./abis": "./src/generated/model-b/abis.ts",
     "./constants": "./src/constants.ts",
-    "./curve": "./src/curve.ts",
-    "./events": "./src/events.ts",
     "./api": "./src/api.ts",
     "./types": "./src/types.ts",
     "./fixtures": "./src/fixtures.ts",

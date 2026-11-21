@@ -10,8 +10,8 @@ import {IQZErrors} from "../../src/interfaces/IQZCommon.sol";
 import {QZConstants} from "../../src/lib/QZConstants.sol";
 import {MockMachine, MockConverter, MockStock} from "./mocks/RewardMocks.sol";
 
-/// @notice SPEC §2.5 / I6 / T9 / T10 for `QZRewardVault`. The machine contract (unit C3) and the converter are mocks;
-///         this test contract plays `QZCore` (the only caller of `onHardwire`).
+/// @notice SPEC §2.5 / I6 / T9 / T10 for `QZRewardVault`. The machine contract and the converter are mocks; this test
+///         contract plays `QZForge` (the only caller of `register`).
 contract RewardVaultTest is Test {
     QZRewardVault internal vault;
     MockMachine internal machine;
@@ -33,12 +33,12 @@ contract RewardVaultTest is Test {
 
     function _lit(uint256 id, address owner, uint8 tier, uint8 track) internal {
         machine.set(id, owner, tier, track, false);
-        vault.onHardwire(id);
+        vault.register(id);
     }
 
     function _relic(uint256 id, address owner) internal {
         machine.set(id, owner, 0, 0, true);
-        vault.onHardwire(id);
+        vault.register(id);
     }
 
     function _notify(uint8 track, uint256 amount) internal {
@@ -80,7 +80,7 @@ contract RewardVaultTest is Test {
         assertLe(vault.totalClaimed(0) + 0, vault.totalNotified(0));
     }
 
-    /// checker #4: 1 machine tier I (W = 10), notify(1), then hardwire a tier II machine (weight 15):
+    /// checker #4: 1 machine tier I (W = 10), notify(1), then light a tier II machine (weight 15):
     /// its claimable is 0 and `claim` does not revert.
     function test_checker4_lateTierIIGetsNothingAndClaimDoesNotRevert() public {
         _lit(1, alice, 1, 0);
@@ -98,8 +98,8 @@ contract RewardVaultTest is Test {
         assertEq(_stock(0).balanceOf(address(vault)), 0);
     }
 
-    /// A machine hardwired after earlier notifies gets none of their fractions either.
-    function test_lateHardwireGetsNoOldFraction() public {
+    /// A machine lit after earlier notifies gets none of their fractions either.
+    function test_lateLightGetsNoOldFraction() public {
         _lit(1, alice, 1, 0);
         _lit(2, bob, 1, 0);
         _lit(3, carol, 1, 0);
@@ -176,15 +176,33 @@ contract RewardVaultTest is Test {
 
     // ───────────── access ─────────────
 
-    function test_onlyCoreEnrols() public {
+    function test_onlyForgeRegisters() public {
         machine.set(1, alice, 1, 0, false);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IQZErrors.NotCore.selector, alice));
-        vault.onHardwire(1);
+        vm.expectRevert(abi.encodeWithSelector(IQZRewardVault.NotForge.selector, alice));
+        vault.register(1);
 
-        vault.onHardwire(1);
+        vault.register(1);
         vm.expectRevert(abi.encodeWithSelector(IQZRewardVault.AlreadyEnrolled.selector, uint256(1)));
-        vault.onHardwire(1);
+        vault.register(1);
+    }
+
+    function test_registerEmitsAndRefusesAnUnrevealedMachine() public {
+        machine.set(7, alice, 3, 4, false);
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit IQZRewardVault.Registered(7, 3, 4, false);
+        vault.register(7);
+        assertTrue(vault.isEnrolled(7));
+
+        machine.setUnrevealed(8, bob);
+        vm.expectRevert(MockMachine.NotRevealed.selector);
+        vault.register(8);
+        assertFalse(vault.isEnrolled(8), "nothing was enrolled");
+        assertEq(vault.weightOf(0), 0);
+
+        machine.set(9, alice, 1, 10, false); // track out of range
+        vm.expectRevert(abi.encodeWithSelector(IQZRewardVault.BadTrack.selector, uint8(10)));
+        vault.register(9);
     }
 
     function test_onlyConverterNotifies() public {
@@ -412,6 +430,61 @@ contract RewardVaultTest is Test {
         assertEq(_stock(0).balanceOf(address(vault)), 0);
     }
 
+    /// The machine owner is a contract and the stock token calls back into it during the payout. Inside the callback
+    /// the payout is already booked (`claimable` is 0, so a read-only re-entry cannot be paid twice) and a re-entering
+    /// `claim` is stopped by the guard itself, not by the empty claimable. A second machine on the same track keeps
+    /// extra stock in the vault, so a double payment would be visible.
+    function test_T9_contractOwnerCallbackSeesBookedPayoutAndCannotReenter() public {
+        ReentrantClaimOwner o = new ReentrantClaimOwner(vault, 1, 0);
+        machine.set(1, address(o), 1, 0, false);
+        vault.register(1);
+        _lit(2, bob, 1, 0);
+        _notify(0, 1000);
+        assertEq(vault.claimable(1, 0), 500);
+        assertEq(vault.claimable(2, 0), 500);
+
+        _stock(0).setReentry(address(o), abi.encodeCall(ReentrantClaimOwner.hook, ()), false);
+        o.claimOnce();
+
+        assertEq(o.hookCalls(), 1, "the token called the owner during the transfer");
+        assertEq(o.seenClaimable(), 0, "the payout is booked before the token moves");
+        assertEq(o.reentrySelector(), IQZRewardVault.Reentrancy.selector, "re-entry stopped by the guard");
+        assertFalse(o.reentrySucceeded());
+        assertEq(_stock(0).balanceOf(address(o)), 500, "paid exactly once");
+        assertEq(_stock(0).balanceOf(address(vault)), 500, "the other machine's share is untouched");
+        assertEq(vault.totalClaimed(0), 500);
+        assertEq(vault.claimable(1, 0), 0);
+        assertEq(vault.claimable(2, 0), 500);
+
+        o.claimOnce();
+        assertEq(_stock(0).balanceOf(address(o)), 500, "a second claim pays nothing");
+        _claim(bob, 2, 0);
+        assertEq(_stock(0).balanceOf(bob), 500);
+        assertEq(_stock(0).balanceOf(address(vault)), 0);
+    }
+
+    // ───────────── tier weights ─────────────
+
+    /// One machine of each tier on its own track: the track weight is the tier weight (10 / 15 / 25 / 40). Tier III and
+    /// IV on one track share a notify 25:40.
+    function test_tierWeights_areTenFifteenTwentyFiveForty() public {
+        _lit(1, alice, 1, 0);
+        _lit(2, alice, 2, 1);
+        _lit(3, alice, 3, 2);
+        _lit(4, alice, 4, 3);
+        assertEq(vault.weightOf(0), 10, "tier I");
+        assertEq(vault.weightOf(1), 15, "tier II");
+        assertEq(vault.weightOf(2), 25, "tier III");
+        assertEq(vault.weightOf(3), 40, "tier IV");
+
+        _lit(5, bob, 3, 4);
+        _lit(6, carol, 4, 4);
+        assertEq(vault.weightOf(4), 65);
+        _notify(4, 6500);
+        assertEq(vault.claimable(5, 4), 2500, "tier III share 25/65");
+        assertEq(vault.claimable(6, 4), 4000, "tier IV share 40/65");
+    }
+
     // ───────────── bounds ─────────────
 
     function test_largeAmountsDoNotOverflow() public {
@@ -425,7 +498,7 @@ contract RewardVaultTest is Test {
         assertLe(vault.totalClaimed(0), 1e27);
     }
 
-    // ───────────── I6 fuzz: random notify / hardwire / claim / transfer ─────────────
+    // ───────────── I6 fuzz: random notify / light / claim / transfer ─────────────
 
     uint256[] internal _stdIds;
     uint256[] internal _relicIds;
@@ -438,6 +511,7 @@ contract RewardVaultTest is Test {
     }
 
     /// @dev One random program over machines on tracks 0 and 1 and up to 2 relics.
+    /// forge-config: default.fuzz.runs = 10000
     function testFuzz_I6_conservation(uint256 seed) public {
         for (uint256 s; s < 40; ++s) {
             seed = uint256(keccak256(abi.encode(seed, s)));
@@ -496,5 +570,46 @@ contract RewardVaultTest is Test {
             // dust is bounded by one unit per lit machine and relic plus the carried fraction (< 1 unit)
             assertLe(notified - claimed - sum, holders + 1, "dust bound");
         }
+    }
+}
+
+/// @notice A machine owner that is a contract: the stock token calls `hook` in the middle of the payout.
+contract ReentrantClaimOwner {
+    IQZRewardVault internal immutable vault;
+    uint256 internal immutable id;
+    uint8 internal immutable track;
+
+    uint256 public hookCalls;
+    uint256 public seenClaimable = type(uint256).max;
+    bytes4 public reentrySelector;
+    bool public reentrySucceeded;
+
+    constructor(IQZRewardVault vault_, uint256 id_, uint8 track_) {
+        vault = vault_;
+        id = id_;
+        track = track_;
+    }
+
+    function claimOnce() external {
+        (uint256[] memory ids, uint8[] memory tracks) = _args();
+        vault.claim(ids, tracks);
+    }
+
+    function hook() external {
+        ++hookCalls;
+        seenClaimable = vault.claimable(id, track);
+        (uint256[] memory ids, uint8[] memory tracks) = _args();
+        try vault.claim(ids, tracks) {
+            reentrySucceeded = true;
+        } catch (bytes memory err) {
+            reentrySelector = bytes4(err);
+        }
+    }
+
+    function _args() internal view returns (uint256[] memory ids, uint8[] memory tracks) {
+        ids = new uint256[](1);
+        tracks = new uint8[](1);
+        ids[0] = id;
+        tracks[0] = track;
     }
 }

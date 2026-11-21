@@ -2,198 +2,177 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
-import {QZConstants as C} from "../src/lib/QZConstants.sol";
-import {QZCurveMath} from "../src/lib/QZCurveMath.sol";
 
-/// @notice Every relation the spec states between its numbers, proven on `QZConstants`.
+import {QZConstants as K} from "../src/lib/QZConstants.sol";
+
+/// @notice Proves the Model B constants against SPEC B.1 to B.5 and the relations between them.
 contract C0ConstantsTest is Test {
-    // §1.3 supply, tiers, weights
+    // ───────────── B.4 supply, tiers, weights ─────────────
+
     function test_supplyAndTiers() public pure {
-        assertEq(C.TOTAL_SUPPLY, 2222 * C.UNIT);
-        assertEq(C.TIER_I_COUNT + C.TIER_II_COUNT + C.TIER_III_COUNT + C.TIER_IV_COUNT, C.STANDARD_MACHINES);
-        assertEq(C.STANDARD_MACHINES + C.RELIC_COUNT, C.TOTAL_MACHINES);
-        assertEq(C.LAST_RELIC_ID, C.TOTAL_MACHINES);
-        assertEq(C.FIRST_RELIC_ID, C.STANDARD_MACHINES + 1);
-        assertEq(C.LAST_RELIC_ID - C.FIRST_RELIC_ID + 1, C.RELIC_COUNT);
-        // §1.3 "1200/650/280/90 divisible by 10 tracks, 222 per track"
-        assertEq(C.TIER_I_COUNT, C.TIER_I_PER_TRACK * C.TRACK_COUNT);
-        assertEq(C.TIER_II_COUNT, C.TIER_II_PER_TRACK * C.TRACK_COUNT);
-        assertEq(C.TIER_III_COUNT, C.TIER_III_PER_TRACK * C.TRACK_COUNT);
-        assertEq(C.TIER_IV_COUNT, C.TIER_IV_PER_TRACK * C.TRACK_COUNT);
+        assertEq(K.TOTAL_MACHINES, 2222);
+        assertEq(K.TIER_I_COUNT + K.TIER_II_COUNT + K.TIER_III_COUNT + K.TIER_IV_COUNT, K.STANDARD_MACHINES);
+        assertEq(K.STANDARD_MACHINES + K.RELIC_COUNT, K.TOTAL_MACHINES);
+        assertEq(K.TIER_I_COUNT, 1200);
+        assertEq(K.TIER_II_COUNT, 650);
+        assertEq(K.TIER_III_COUNT, 280);
+        assertEq(K.TIER_IV_COUNT, 90);
+        assertEq(K.FIRST_MACHINE_ID, 1);
+        assertEq(K.FIRST_RELIC_ID, 2221);
+        assertEq(K.LAST_RELIC_ID, K.TOTAL_MACHINES);
+        assertEq(K.LAST_RELIC_ID - K.FIRST_RELIC_ID + 1, K.RELIC_COUNT);
+    }
+
+    function test_tracks() public pure {
+        assertEq(K.TRACK_COUNT, 10);
+        assertEq(K.MACHINES_PER_TRACK * K.TRACK_COUNT, K.STANDARD_MACHINES);
+        assertEq(K.TIER_I_PER_TRACK * K.TRACK_COUNT, K.TIER_I_COUNT);
+        assertEq(K.TIER_II_PER_TRACK * K.TRACK_COUNT, K.TIER_II_COUNT);
+        assertEq(K.TIER_III_PER_TRACK * K.TRACK_COUNT, K.TIER_III_COUNT);
+        assertEq(K.TIER_IV_PER_TRACK * K.TRACK_COUNT, K.TIER_IV_COUNT);
         assertEq(
-            C.TIER_I_PER_TRACK + C.TIER_II_PER_TRACK + C.TIER_III_PER_TRACK + C.TIER_IV_PER_TRACK, C.MACHINES_PER_TRACK
+            K.TIER_I_PER_TRACK + K.TIER_II_PER_TRACK + K.TIER_III_PER_TRACK + K.TIER_IV_PER_TRACK, K.MACHINES_PER_TRACK
         );
-        assertEq(C.MACHINES_PER_TRACK * C.TRACK_COUNT, C.STANDARD_MACHINES);
     }
 
-    // §2.5 integer weights (x10 of 1 / 1.5 / 2.5 / 4), §1.3 total 3235
     function test_weights() public pure {
-        assertEq(C.WEIGHT_TIER_I, 10);
-        assertEq(C.WEIGHT_TIER_II, 15);
-        assertEq(C.WEIGHT_TIER_III, 25);
-        assertEq(C.WEIGHT_TIER_IV, 40);
-        assertEq(C.weightOf(1), 10);
-        assertEq(C.weightOf(4), 40);
-        uint256 total = C.TIER_I_COUNT * C.WEIGHT_TIER_I + C.TIER_II_COUNT * C.WEIGHT_TIER_II + C.TIER_III_COUNT
-            * C.WEIGHT_TIER_III + C.TIER_IV_COUNT * C.WEIGHT_TIER_IV;
-        assertEq(total, C.TOTAL_STANDARD_WEIGHT);
-        assertEq(total / 10, 3235);
-        assertEq(C.RELIC_SHARE_BPS, 1000); // 10% of each track, 5% per relic
-        assertEq(C.RELIC_SHARE_BPS / C.RELIC_COUNT, 500);
+        assertEq(K.WEIGHT_TIER_I, 10);
+        assertEq(K.WEIGHT_TIER_II, 15);
+        assertEq(K.WEIGHT_TIER_III, 25);
+        assertEq(K.WEIGHT_TIER_IV, 40);
+        assertEq(
+            K.TIER_I_COUNT * K.WEIGHT_TIER_I + K.TIER_II_COUNT * K.WEIGHT_TIER_II + K.TIER_III_COUNT * K.WEIGHT_TIER_III
+                + K.TIER_IV_COUNT * K.WEIGHT_TIER_IV,
+            K.TOTAL_STANDARD_WEIGHT
+        );
+        assertEq(K.weightOf(K.TIER_I), 10);
+        assertEq(K.weightOf(K.TIER_IV), 40);
+        // the relics take 10% of a track's reward, 5% each
+        assertEq(K.RELIC_SHARE_BPS, 1_000);
+        assertEq(K.RELIC_SHARE_BPS * K.RELIC_COUNT / K.RELIC_COUNT, 1_000);
+        assertEq(K.ACC_PRECISION, 1e36);
     }
 
-    // §1.4 fee splits
-    function test_feeSplits() public pure {
-        assertEq(C.HOOK_FEE_BPS, 300);
-        assertEq(C.HOOK_REWARD_BPS + C.HOOK_LP_BPS + C.HOOK_CIRCUIT_BPS + C.HOOK_TREASURY_BPS, C.HOOK_FEE_BPS);
-        assertEq(C.HOOK_REWARD_BPS, 200);
-        assertEq(C.HOOK_LP_BPS, 50);
-        assertEq(C.HOOK_CIRCUIT_BPS, 25);
-        assertEq(C.HOOK_TREASURY_BPS, 25);
-        assertEq(C.CURVE_FEE_BPS, 100);
-        assertEq(C.CURVE_REWARD_BPS + C.CURVE_TREASURY_BPS, C.CURVE_FEE_BPS);
-        assertEq(C.CURVE_REWARD_BPS, 75);
-        assertEq(C.CURVE_TREASURY_BPS, 25);
-        assertEq(C.ROYALTY_REWARD_BPS + C.ROYALTY_TREASURY_BPS, C.ROYALTY_BPS);
-        assertEq(C.ROYALTY_BPS, 500);
+    function test_weightOfRejectsRelicAndUnknownTiers() public {
+        vm.expectRevert(abi.encodeWithSelector(K.BadTier.selector, uint8(0)));
+        this.weightOfExt(0);
+        vm.expectRevert(abi.encodeWithSelector(K.BadTier.selector, uint8(5)));
+        this.weightOfExt(5);
     }
 
-    // §1.5 phases and limits
-    function test_phasesAndLimits() public pure {
-        assertEq(C.F0_DURATION, 30 minutes);
-        assertEq(C.F1_END, 120 minutes);
-        assertEq(C.F0_MAX_PER_WALLET, 2e18);
-        assertEq(C.F1_MAX_PER_TX, 2e18);
-        assertEq(C.F1_MAX_PER_WALLET, 10e18);
-        assertEq(C.F2_MAX_PER_TX, 20e18);
+    function weightOfExt(uint8 tier) external pure returns (uint256) {
+        return K.weightOf(tier);
     }
 
-    // §1.6 curve parameters and their relations
-    function test_curveParameters() public pure {
-        assertEq(C.CURVE_SUPPLY, 1777.6e18);
-        assertEq(C.POOL_SUPPLY, 444.4e18);
-        assertEq(C.CURVE_SUPPLY + C.POOL_SUPPLY, C.TOTAL_SUPPLY); // G = 2222 - S
-        assertEq(C.CURVE_SUPPLY * 100 / C.TOTAL_SUPPLY, 80); // 80/20
-        assertEq(C.X0, 733_333_333_333_333_334); // E / 3 = 0.7333... ETH, rounded up to a whole wei
-        assertEq(C.TARGET_ETH, 2.2 ether);
-        assertEq(C.CURVE_K, C.X0 * C.Y0);
+    // ───────────── B.4 mint: prices, windows, split ─────────────
+
+    function test_prices() public pure {
+        assertEq(K.USDG_DECIMALS, 6);
+        assertEq(K.PRICE_GTD, 3_000_000); // $3
+        assertEq(K.PRICE_FCFS, 4_000_000); // $4
+        assertEq(K.PRICE_PUBLIC, 5_000_000); // $5
+        assertLt(K.PRICE_GTD, K.PRICE_FCFS);
+        assertLt(K.PRICE_FCFS, K.PRICE_PUBLIC);
     }
 
-    /// @dev Y0 ~ S^2 / (S - G) = 2370.1333...e18. X0 = E/3 is not a whole wei, so Y0 is the round-up that keeps
-    ///      `E = X0 x S / (Y0 - S)` exact: `Y0 = S + S x X0 / E` (documented in QZConstants).
-    function test_Y0IsTheRoundUpThatKeepsETargetExact() public pure {
-        uint256 num = C.CURVE_SUPPLY * C.CURVE_SUPPLY;
-        uint256 den = C.CURVE_SUPPLY - C.POOL_SUPPLY;
-        uint256 idealCeil = (num + den - 1) / den;
-        assertGt(num % den, 0); // not exact in wei: 2370.1333...e18
-        assertEq(idealCeil, 2_370_133_333_333_333_333_334);
-        assertGe(C.Y0, idealCeil); // rounded up, never down
-        assertEq(C.Y0 - idealCeil, 538); // 538 wei above the ideal, 2.3e-19 relative
-        assertEq(C.CURVE_SUPPLY % C.TARGET_ETH, 0); // S / E = 808 exactly
-        assertEq(C.Y0, C.CURVE_SUPPLY + C.CURVE_SUPPLY / C.TARGET_ETH * C.X0);
-        assertEq(C.Y0, 2_370_133_333_333_333_333_872);
-        assertEq(3 * C.X0 - C.TARGET_ETH, 2); // X0 = ceil(E / 3)
+    function test_windows() public pure {
+        assertEq(K.GTD_WINDOW, 24 hours);
+        assertEq(K.FCFS_WINDOW, 12 hours);
+        assertEq(K.PUBLIC_WINDOW_MAX, 24 hours);
+        assertEq(K.GTD_WINDOW + K.FCFS_WINDOW + K.PUBLIC_WINDOW_MAX, 60 hours);
     }
 
-    /// @dev §1.6 "E = X0 x S / (Y0 - S)": the constant 2.2 ETH equals the formula exactly (0 wei).
-    function test_targetEquationHoldsExactly() public pure {
-        uint256 d = C.Y0 - C.CURVE_SUPPLY;
-        assertEq(C.TARGET_ETH * d, C.X0 * C.CURVE_SUPPLY); // E * d == X0 * S, 0 wei off
-        // and the curve reserve at s = S is exactly E (I9 cap)
-        assertEq(QZCurveMath.reserveAt(C.CURVE_SUPPLY), C.TARGET_ETH);
+    function test_mintSplitIs25To75() public pure {
+        assertEq(K.MINT_REWARD_BPS, 2_500);
+        assertEq(K.MINT_TREASURY_BPS, 7_500);
+        assertEq(K.MINT_REWARD_BPS + K.MINT_TREASURY_BPS, K.BPS);
     }
 
-    /// @dev §1.6 "graduation pool price == final curve price": E/G == (X0+E)/(Y0-S) within 1e-18 relative (X0 is not
-    ///      a whole wei: the gap is 6.8e-19), and both v4 sqrt prices agree to 1e-18 relative.
-    function test_graduationPoolPriceEqualsFinalCurvePrice() public pure {
-        uint256 d = C.Y0 - C.CURVE_SUPPLY;
-        uint256 lhs = C.TARGET_ETH * d; // E/G = (X0+E)/d  <=>  E*d = (X0+E)*G
-        uint256 rhs = (C.X0 + C.TARGET_ETH) * C.POOL_SUPPLY;
-        uint256 diff = lhs > rhs ? lhs - rhs : rhs - lhs;
-        assertLt(diff * 1e18, lhs);
-
-        for (uint256 i = 0; i < 2; i++) {
-            bool qzIsCurrency0 = i == 0;
-            uint256 fromPool = QZCurveMath.graduationSqrtPriceX96(qzIsCurrency0);
-            // curve price in the same orientation: WETH per QZ = (X0+E)/d; inverted when QZ is currency1.
-            uint256 ratioX192 = qzIsCurrency0
-                ? FullMath.mulDiv(C.X0 + C.TARGET_ETH, 1 << 192, d)
-                : FullMath.mulDiv(d, 1 << 192, C.X0 + C.TARGET_ETH);
-            uint256 fromCurve = FixedPointMathLib.sqrt(ratioX192);
-            uint256 sqrtDiff = fromPool > fromCurve ? fromPool - fromCurve : fromCurve - fromPool;
-            assertLt(sqrtDiff * 1e18, fromPool);
+    function test_mintSplitIsExactAtEveryPrice() public pure {
+        uint256[3] memory prices = [K.PRICE_GTD, K.PRICE_FCFS, K.PRICE_PUBLIC];
+        uint256[3] memory reward = [uint256(750_000), 1_000_000, 1_250_000];
+        uint256[3] memory treasury = [uint256(2_250_000), 3_000_000, 3_750_000];
+        for (uint256 i; i < 3; ++i) {
+            uint256 r = prices[i] * K.MINT_REWARD_BPS / K.BPS;
+            uint256 t = prices[i] - r;
+            assertEq(r, reward[i]);
+            assertEq(t, treasury[i]);
+            assertEq(prices[i] * K.MINT_TREASURY_BPS % K.BPS, 0);
+            assertEq(r * K.BPS, prices[i] * K.MINT_REWARD_BPS);
         }
     }
 
-    /// @dev §1.6 price table: start 0.000309 ETH/QZ (X0/Y0), final 0.00495 ETH/QZ (E/G), 16x.
-    function test_priceTable() public pure {
-        uint256 start = QZCurveMath.priceAt(0, 0);
-        uint256 end = QZCurveMath.priceAt(C.CURVE_SUPPLY, C.TARGET_ETH);
-        assertApproxEqAbs(start, 0.000309 ether, 0.000001 ether);
-        assertApproxEqAbs(end, 0.00495 ether, 0.000001 ether);
-        assertEq(end * 1e18 / start / 1e14, 160_000); // 16.0000x (4 decimals)
-        assertEq(end, C.TARGET_ETH * 1e18 / C.POOL_SUPPLY); // E/G
+    function test_oneMintPerWalletAndNoRoyalty() public pure {
+        assertEq(K.MAX_PER_WALLET, 1);
+        assertEq(K.MACHINE_ROYALTY_BPS, 0);
+        assertEq(K.REVEAL_MODULUS, 2222);
     }
 
-    // §4.3 / §2.5 / §3.2 times
-    function test_timesAndConverter() public pure {
-        assertEq(C.EPOCH_DURATION, 120);
-        assertEq(C.REVEAL_ROLLOVER, 3600);
-        assertEq(C.ONION_LENGTH, 2_630_160);
-        assertEq(C.ONION_LENGTH, 3653 days / C.EPOCH_DURATION);
-        // One link per epoch covers 10 years, leap days included (any 10 calendar years span at most 3653 days).
-        assertGe(C.ONION_LENGTH * C.EPOCH_DURATION, 3653 days);
-        assertEq(C.FIRST_OPEN_EPOCH_DELAY, 24 hours);
-        assertEq(C.OPEN_EPOCH_INTERVAL, 60);
-        assertEq(C.CONVERT_FLOOR_BPS, 9700);
-        assertEq(C.MAX_SPOT_DEVIATION_BPS, 300);
-        assertEq(C.MIN_OBSERVATIONS, 9);
-        assertEq(C.MEDIAN_WINDOW, 30 minutes);
-        assertEq(C.FALLBACK_MIN_OBSERVATIONS, 25);
-        assertEq(C.FALLBACK_MIN_OBSERVATION_SPACING, 5 minutes);
-        assertEq(C.FALLBACK_WINDOW, 2 hours);
-        assertGe(C.FALLBACK_MIN_OBSERVATIONS * C.FALLBACK_MIN_OBSERVATION_SPACING, C.FALLBACK_WINDOW);
-        assertEq(C.DEFAULT_MAX_CHUNK, 0.5 ether);
-        assertEq(C.NFLX_MAX_CHUNK, 0.1 ether);
-        assertEq(C.DEFAULT_FALLBACK_DAILY_CAP, 0.05 ether);
-        assertEq(C.CIRCUIT_WEEK, 7 days);
-        assertEq(C.REDIRECT_DELAY, 180 days);
+    // ───────────── B.5 light ─────────────
+
+    function test_lightAmountIsN() public pure {
+        assertEq(K.LIGHT_AMOUNT, 100_000e18);
+        assertEq(K.QZ_TOTAL_SUPPLY, 1_000_000_000e18);
+        // N is 0.01% of supply, so lighting every machine locks 22.22%
+        assertEq(K.LIGHT_AMOUNT * 10_000, K.QZ_TOTAL_SUPPLY);
+        assertEq(K.LIGHT_AMOUNT * K.TOTAL_MACHINES, K.QZ_TOTAL_SUPPLY * 2222 / 10_000);
     }
 
-    // §5.2 LayerZero
-    function test_layerZero() public pure {
-        assertEq(C.EID_ROBINHOOD, 30416);
-        assertEq(C.EID_INK, 30339);
-        assertEq(C.EID_BASE, 30184);
-        assertEq(C.MAX_UNITS_PER_MESSAGE, 10);
-        assertEq(C.OFT_SHARED_DECIMALS, 6);
-        assertEq(C.LZ_CONFIRMATIONS, 30);
-        assertEq(C.GAS_ONFT_HOME_TO_SPOKE, 120_000);
-        assertEq(C.GAS_ONFT_SPOKE_TO_HOME, 190_000);
-        assertEq(C.GAS_OFT_HOME_TO_SPOKE, 100_000);
-        assertEq(C.GAS_OFT_SPOKE_TO_HOME, 1_200_000);
-        assertEq(C.LZ_REQUIRED_DVN_COUNT + C.LZ_OPTIONAL_DVN_THRESHOLD, 3); // 3 attestations per message
+    // ───────────── B.3 creator fee: 20:7 ─────────────
+
+    function test_feeSplitIs20To7() public pure {
+        assertEq(K.REWARD_PART, 20);
+        assertEq(K.TREASURY_PART, 7);
+        assertEq(K.CREATOR_TAX_BPS, 200);
+        assertEq(K.PONS_BASE_FEE_BPS, 100);
+        assertEq(K.PONS_PROTOCOL_SHARE_BPS, 3_000);
     }
 
-    // §5.1 hook permissions
-    function test_hookFlags() public pure {
-        uint160 f = C.HOOK_FLAGS;
-        assertTrue(f & Hooks.BEFORE_INITIALIZE_FLAG != 0);
-        assertTrue(f & Hooks.BEFORE_ADD_LIQUIDITY_FLAG != 0);
-        assertTrue(f & Hooks.BEFORE_SWAP_FLAG != 0);
-        assertTrue(f & Hooks.AFTER_SWAP_FLAG != 0);
-        assertTrue(f & Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG != 0);
-        assertTrue(f & Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG == 0);
-        assertTrue(f & Hooks.AFTER_ADD_LIQUIDITY_FLAG == 0);
-        assertTrue(f & Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG == 0);
+    /// @dev What reaches the splitter per unit of volume: the base fee after Pons' share plus the whole creator tax.
+    ///      The reward part must equal the creator tax exactly: 270 bps x 20/27 = 200 bps.
+    function test_rewardPartEqualsTheCreatorTax() public pure {
+        uint256 intoSplitterBps = K.PONS_BASE_FEE_BPS * (K.BPS - K.PONS_PROTOCOL_SHARE_BPS) / K.BPS + K.CREATOR_TAX_BPS;
+        assertEq(intoSplitterBps, 270); // 0.70% of the base fee after Pons' 30%, plus the 2.00% creator tax
+        assertEq(intoSplitterBps * K.REWARD_PART / (K.REWARD_PART + K.TREASURY_PART), K.CREATOR_TAX_BPS);
+        assertEq(intoSplitterBps * K.TREASURY_PART / (K.REWARD_PART + K.TREASURY_PART), 70);
     }
 
-    function test_poolTickBounds() public pure {
-        assertEq(C.POOL_MIN_TICK % C.POOL_TICK_SPACING, 0);
-        assertEq(C.POOL_MAX_TICK % C.POOL_TICK_SPACING, 0);
-        assertEq(C.POOL_MIN_TICK, -C.POOL_MAX_TICK);
+    function testFuzz_feeSplitLeavesNoDust(uint96 total) public pure {
+        uint256 reward = uint256(total) * K.REWARD_PART / (K.REWARD_PART + K.TREASURY_PART);
+        uint256 treasury = uint256(total) - reward;
+        assertEq(reward + treasury, total);
+        assertGe(treasury * K.REWARD_PART, reward * K.TREASURY_PART);
+    }
+
+    // ───────────── entropy and converter ─────────────
+
+    function test_entropyAndConverter() public pure {
+        assertEq(K.MAX_REVEAL_GAP, 1_000);
+        assertEq(K.FIRST_OPEN_EPOCH_DELAY, 24 hours);
+        assertEq(K.OPEN_EPOCH_INTERVAL, 60);
+        assertEq(K.CONVERT_FLOOR_BPS, 9_700);
+        assertEq(K.V3_TWAP_WINDOW, 10 minutes);
+        assertEq(K.MAX_SPOT_DEVIATION_BPS, 300);
+        assertEq(K.CONVERT_FLOOR_BPS + K.MAX_SPOT_DEVIATION_BPS, K.BPS);
+        assertEq(K.MIN_OBSERVATIONS, 9);
+        assertEq(K.MEDIAN_WINDOW, 30 minutes);
+        assertEq(K.FALLBACK_SILENCE, 24 hours);
+        assertEq(K.FALLBACK_MIN_OBSERVATIONS, 25);
+        assertEq(K.FALLBACK_MIN_OBSERVATION_SPACING, 5 minutes);
+        assertEq(K.FALLBACK_WINDOW, 2 hours);
+        assertEq(K.DEFAULT_MAX_CHUNK, 0.5 ether);
+        assertEq(K.NFLX_MAX_CHUNK, 0.1 ether);
+        assertEq(K.DEFAULT_FALLBACK_DAILY_CAP, 0.05 ether);
+        assertEq(K.FALLBACK_CAP_WINDOW, 1 days);
+        // 25 observations spaced 5 minutes need 2 hours
+        assertEq(
+            K.FALLBACK_MIN_OBSERVATIONS * K.FALLBACK_MIN_OBSERVATION_SPACING - K.FALLBACK_MIN_OBSERVATION_SPACING,
+            K.FALLBACK_WINDOW
+        );
+    }
+
+    function test_chainIds() public pure {
+        assertEq(K.CHAIN_ID_ROBINHOOD, 4663);
+        assertEq(K.CHAIN_ID_ROBINHOOD_TESTNET, 46_630);
     }
 }

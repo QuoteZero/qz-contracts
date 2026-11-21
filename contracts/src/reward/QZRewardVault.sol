@@ -18,7 +18,7 @@ import {QZConstants} from "../lib/QZConstants.sol";
 ///         `relicAcc[t]` / `relicCarry[t]` per relic. Unlit relic slots fall back to the standard machines.
 ///
 ///         A machine enrolled after a `notify` gets nothing from it: standard `debtP = weight x acc[t]` and
-///         relic `relicStart[r][t] = relicAcc[t]` are taken at hardwire. Claims round down and leave the fraction
+///         relic `relicStart[r][t] = relicAcc[t]` are taken at lighting. Claims round down and leave the fraction
 ///         recorded in `debtP` / `relicPaid`, so no fraction is paid twice (I6). A machine is keyed by `machineId`, not
 ///         by owner: a transfer needs no callback and the new owner simply inherits the unclaimed amount.
 ///
@@ -34,8 +34,8 @@ contract QZRewardVault is IQZRewardVault {
     uint256 internal constant P = QZConstants.ACC_PRECISION;
     uint256 internal constant TRACKS = QZConstants.TRACK_COUNT;
 
-    /// @dev `QZCore`: the only caller of `onHardwire`.
-    address public immutable core;
+    /// @dev `QZForge`: the only caller of `register`.
+    address public immutable forge;
     /// @dev `QZMachine`: ownership of a machine at home decides who claims (design B, §2.2).
     address public immutable machine;
     /// @dev `QZConverter`: the only caller of `notify`; its sealed routes name the stock token per track.
@@ -69,9 +69,9 @@ contract QZRewardVault is IQZRewardVault {
 
     uint256 private _entered = 1;
 
-    constructor(address core_, address machine_, address converter_) {
-        if (core_ == address(0) || machine_ == address(0) || converter_ == address(0)) revert ZeroAddress();
-        core = core_;
+    constructor(address forge_, address machine_, address converter_) {
+        if (forge_ == address(0) || machine_ == address(0) || converter_ == address(0)) revert ZeroAddress();
+        forge = forge_;
         machine = machine_;
         converter = converter_;
     }
@@ -83,11 +83,13 @@ contract QZRewardVault is IQZRewardVault {
         _entered = 1;
     }
 
-    // ───────────── hardwire ─────────────
+    // ───────────── lighting ─────────────
 
     /// @inheritdoc IQZRewardVault
-    function onHardwire(uint256 id) external {
-        if (msg.sender != core) revert NotCore(msg.sender);
+    /// @dev Called by `QZForge.light` after it took the lock. The machine's traits must be revealed (`traitsOf`
+    ///      reverts before the reveal), so a machine cannot be lit blind.
+    function register(uint256 id) external {
+        if (msg.sender != forge) revert NotForge(msg.sender);
         Enrollment storage e = _enrollment[id];
         if (e.enrolled) revert AlreadyEnrolled(id);
 
@@ -107,6 +109,7 @@ contract QZRewardVault is IQZRewardVault {
             _weightSum[track] += weight;
             _debtP[id] = weight * _acc[track];
         }
+        emit Registered(id, tier, track, relic);
     }
 
     // ───────────── notify ─────────────
@@ -148,7 +151,7 @@ contract QZRewardVault is IQZRewardVault {
     // ───────────── claim ─────────────
 
     /// @inheritdoc IQZRewardVault
-    /// @dev A pair with nothing to claim is skipped (never reverts): a machine hardwired after the last `notify`
+    /// @dev A pair with nothing to claim is skipped (never reverts): a machine lit after the last `notify`
     ///      has `claimable == 0` and `claim` must not revert for it. A pair whose stock transfer fails is skipped and
     ///      its state restored; every other pair of the batch still pays. A failure that is the claimant's own (a
     ///      blocklisted recipient: the vault can still move `pay` to itself) raises `ClaimFailed` for that pair only;
@@ -237,7 +240,7 @@ contract QZRewardVault is IQZRewardVault {
 
     /// @notice The stock token of `track`, from the converter's sealed route table.
     function stockOf(uint8 track) public view returns (address) {
-        return IQZConverter(converter).routeOf(track).stock;
+        return IQZConverter(payable(converter)).routeOf(track).stock;
     }
 
     function trackFrozen(uint8 track) external view returns (bool) {

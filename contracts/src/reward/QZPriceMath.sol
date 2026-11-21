@@ -37,6 +37,13 @@ interface ISwapRouter02Min {
 library QZPriceMath {
     uint256 internal constant Q128 = 1 << 128;
 
+    /// @notice `quote`, rounded up. Used where a size is charged against a limit: the charge never undershoots.
+    function quoteRoundingUp(uint256 amountIn, uint256 pX128, bool inIsToken0) internal pure returns (uint256) {
+        return inIsToken0
+            ? FullMath.mulDivRoundingUp(amountIn, pX128, Q128)
+            : FullMath.mulDivRoundingUp(amountIn, Q128, pX128);
+    }
+
     /// @dev `sqrtP^2 / 2^64`. `sqrtP < 2^160` so the result fits in 256 bits.
     function priceX128(uint160 sqrtPriceX96) internal pure returns (uint256) {
         return FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64);

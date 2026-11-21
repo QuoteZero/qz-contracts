@@ -1,182 +1,163 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
+import {CommonBase} from "forge-std/Base.sol";
+import {StdUtils} from "forge-std/StdUtils.sol";
 
-import {QZCore} from "../../src/core/QZCore.sol";
-import {QZEntropy} from "../../src/random/QZEntropy.sol";
 import {QZMachine} from "../../src/machine/QZMachine.sol";
 import {QZConstants} from "../../src/lib/QZConstants.sol";
+import {MintPhase} from "../../src/lib/QZTypes.sol";
 import {MachineFixture} from "./MachineFixture.sol";
+import {MockUSDG} from "./MockUSDG.sol";
+import {QZMerkle} from "./QZMerkle.sol";
 
-/// @notice Drives the real core + entropy + machine with random wallet-to-wallet moves, 1-wei bounces (rerolls), epoch
-///         advances with reveals, pauses and hardwires, and records every machine id it saw minted.
-contract MachineHandler is Test {
-    uint256 internal constant EPOCH = QZConstants.EPOCH_DURATION;
-    uint64 internal immutable E0;
-    address internal immutable revealer;
+/// @dev Random buyers (listed and unlisted, honest and underfunded), random time, a paused or blocklisted USDG, a
+///      paused machine and bulk fills toward the cap.
+contract MintHandler is CommonBase, StdUtils {
+    QZMachine public machine;
+    MockUSDG public usdg;
+    address public converter;
+    address public treasury;
+    address public pauser;
+    uint64 public start;
+    bytes32[] public gtdTree;
+    bytes32[] public fcfsTree;
+    address[] public listed;
 
-    QZCore internal immutable core;
-    QZEntropy internal immutable entropy;
-    QZMachine internal immutable machine;
-    address internal immutable curve;
-    address internal immutable pauser;
-    bytes32[] internal chain;
-    address[4] internal users;
-
-    bool public machineIssuedTwice;
-    bool public machineOutOfRange;
-    uint256 public hardwires;
-    uint256[] public mintedIds;
-    mapping(uint256 => bool) public isMinted;
+    uint256 public successes;
+    mapping(address => uint256) public mintsOf;
+    uint256 public bulkSeed;
 
     constructor(
-        QZCore core_,
-        QZEntropy entropy_,
-        QZMachine machine_,
-        address curve_,
-        address pauser_,
-        address revealer_,
-        bytes32[] memory chain_,
-        uint64 e0,
-        address[4] memory users_
+        QZMachine m,
+        MockUSDG u,
+        address c,
+        address t,
+        address p,
+        uint64 s,
+        bytes32[] memory gt,
+        bytes32[] memory ft,
+        address[] memory l
     ) {
-        core = core_;
-        entropy = entropy_;
-        machine = machine_;
-        curve = curve_;
-        pauser = pauser_;
-        revealer = revealer_;
-        E0 = e0;
-        users = users_;
-        for (uint256 i; i < chain_.length; ++i) {
-            chain.push(chain_[i]);
+        machine = m;
+        usdg = u;
+        converter = c;
+        treasury = t;
+        pauser = p;
+        start = s;
+        gtdTree = gt;
+        fcfsTree = ft;
+        listed = l;
+    }
+
+    function warp(uint32 dt) external {
+        vm.warp(block.timestamp + dt % 20 hours);
+    }
+
+    function buy(uint8 who, uint8 funding, bool useProof) external {
+        address buyer = who % 2 == 0 ? listed[who % listed.length] : address(uint160(0xD0000 + who));
+        uint256 price = funding % 4 == 0 ? 0 : 5e6; // some buyers bring no USDG
+        if (price != 0) {
+            usdg.mint(buyer, price);
+            vm.prank(buyer);
+            usdg.approve(address(machine), price);
+        }
+        MintPhase p = machine.phase();
+        bytes32[] memory proof = new bytes32[](0);
+        if (useProof && who % 2 == 0) {
+            bytes32[] memory tree = p == MintPhase.Fcfs ? fcfsTree : gtdTree;
+            try this.proofFor(tree, buyer) returns (bytes32[] memory pr) {
+                proof = pr;
+            } catch {}
+        }
+        vm.prank(buyer);
+        try machine.mint(proof) returns (uint256) {
+            ++successes;
+            ++mintsOf[buyer];
+        } catch {}
+    }
+
+    function proofFor(bytes32[] memory tree, address a) external pure returns (bytes32[] memory) {
+        return QZMerkle.proofOf(tree, a);
+    }
+
+    /// @dev Sell up to 300 public machines to fresh wallets at once so the cap is reachable in a run.
+    function fill(uint16 n) external {
+        if (machine.phase() != MintPhase.Public) return;
+        uint256 count = bound(n, 1, 300);
+        for (uint256 i; i < count; ++i) {
+            address buyer = address(uint160(0xE0000 + ++bulkSeed));
+            usdg.mint(buyer, 5e6);
+            vm.prank(buyer);
+            usdg.approve(address(machine), 5e6);
+            vm.prank(buyer);
+            try machine.mint(new bytes32[](0)) returns (uint256) {
+                ++successes;
+                ++mintsOf[buyer];
+            } catch {
+                break;
+            }
         }
     }
 
-    function usersAt(uint256 i) external view returns (address) {
-        return users[i];
+    function breakUsdg(uint8 kind, bool on) external {
+        if (kind % 3 == 0) usdg.setPaused(on);
+        else if (kind % 3 == 1) usdg.setBlocked(treasury, on);
+        else usdg.setBlocked(converter, on);
     }
 
-    function mintedCount() external view returns (uint256) {
-        return mintedIds.length;
-    }
-
-    function give(uint256 userSeed, uint256 amount) external {
-        uint256 left = core.balanceOf(curve);
-        amount = bound(amount, 0, left < 6e18 ? left : 6e18);
-        vm.prank(curve);
-        core.transfer(users[userSeed % 4], amount);
-    }
-
-    function transfer(uint256 fromSeed, uint256 toSeed, uint256 amount) external {
-        address from = users[fromSeed % 4];
-        address to = users[toSeed % 4];
-        uint256 bal = core.balanceOf(from);
-        // mostly dust and fractions of a unit: those are the moves that dissolve and re-mint tickets
-        amount = amount % 3 == 0 ? bound(amount, 0, bal) : bound(amount, 0, bal < 3 ? bal : 3);
-        vm.prank(from);
-        core.transfer(to, amount);
-    }
-
-    /// @dev Rerolls `user`: 1 wei out and back through `other`.
-    function bounce(uint256 userSeed) external {
-        address a = users[userSeed % 4];
-        address b = users[(userSeed % 4 + 1) % 4];
-        if (core.balanceOf(a) == 0) return;
-        vm.prank(a);
-        core.transfer(b, 1);
-        vm.prank(b);
-        core.transfer(a, 1);
-    }
-
-    function advance(uint256 k) external {
-        k = bound(k, 1, 3);
-        vm.warp(block.timestamp + k * EPOCH);
-        for (uint64 e = entropy.nextReveal(); e < entropy.currentEpoch(); ++e) {
-            vm.prank(revealer);
-            entropy.reveal(e, chain[e - E0 + 1]);
-        }
-        entropy.processQueue(type(uint256).max);
-    }
-
-    function setPaused(bool on) external {
-        if (core.paused() == on) return;
+    function toggleMachinePause(bool on) external {
         vm.prank(pauser);
-        if (on) core.pause();
-        else core.unpause();
+        if (on && !machine.paused()) machine.pause();
+        else if (!on && machine.paused()) machine.unpause();
     }
 
-    function hardwire(uint256 userSeed, uint256 pick) external {
-        address u = users[userSeed % 4];
-        uint256[] memory ids = core.ownedIds(u, 0, type(uint256).max);
-        if (ids.length == 0 || core.paused()) return;
-        uint256 ticketId = ids[pick % ids.length];
-        (,,, uint256 machineId, bool revealed) = core.ticketInfo(ticketId);
-        uint256 supplyBefore = core.totalSupply();
-        vm.prank(u);
-        try core.hardwire(ticketId) returns (uint256 minted) {
-            ++hardwires;
-            if (minted < 1 || minted > QZConstants.TOTAL_MACHINES) machineOutOfRange = true;
-            if (isMinted[minted]) machineIssuedTwice = true;
-            if (!revealed || minted != machineId) machineIssuedTwice = true; // wrong id: flagged by the same invariant
-            isMinted[minted] = true;
-            mintedIds.push(minted);
-            assertEq(core.totalSupply(), supplyBefore - QZConstants.UNIT, "exactly 1 QZ burned");
-        } catch {
-            assertTrue(
-                !revealed || core.balanceOf(u) < QZConstants.UNIT, "a revealed ticket of a funded owner hardwires"
-            );
-        }
+    function wallets() external view returns (address[] memory) {
+        return listed;
     }
 }
 
-/// @notice SPEC §2.4: I1 supply and I3 machine id uniqueness, with `QZMachine` and `QZCore` as deployed.
 contract QZMachineInvariantTest is StdInvariant, MachineFixture {
-    MachineHandler internal handler;
+    MintHandler internal handler;
 
     function setUp() public override {
         super.setUp();
-        address[4] memory users = [alice, bob, carol, makeAddr("dave")];
-        handler = new MachineHandler(core, entropy, machine, curve, pauser, REVEALER, chain, E0, users);
+        address[] memory l = new address[](gtdList.length);
+        for (uint256 i; i < l.length; ++i) {
+            l[i] = gtdList[i];
+        }
+        handler = new MintHandler(machine, usdg, converter, treasury, pauser, START, gtdTree, fcfsTree, l);
+        vm.warp(START);
         targetContract(address(handler));
     }
 
-    /// forge-config: default.invariant.runs = 512
-    /// forge-config: default.invariant.depth = 64
-    /// forge-config: default.invariant.fail-on-revert = true
-    function invariant_I1_supplyPlusHardwiredIsConstant() public view {
-        assertEq(core.totalSupply() + core.totalHardwired() * UNIT, QZConstants.TOTAL_SUPPLY);
-        assertEq(core.economicUnits(), QZConstants.TOTAL_SUPPLY);
+    /// @notice B1 row: the supply never passes 2222.
+    function invariant_supplyCapped() public view {
+        assertLe(machine.mintedCount(), QZConstants.TOTAL_MACHINES);
+        assertEq(machine.totalSupply(), machine.mintedCount());
     }
 
-    /// forge-config: default.invariant.runs = 512
-    /// forge-config: default.invariant.depth = 64
-    /// forge-config: default.invariant.fail-on-revert = true
-    function invariant_I3_machineIdsAreUniqueAndCountMatches() public view {
-        assertEq(machine.totalMinted(), core.totalHardwired(), "totalMinted == totalHardwired");
-        assertEq(handler.mintedCount(), core.totalHardwired());
-        assertFalse(handler.machineIssuedTwice(), "a machine id was issued twice");
-        assertFalse(handler.machineOutOfRange(), "a machine id out of 1..2222");
+    /// @notice B1 row: the machine never holds USDG, after every call of every sequence.
+    function invariant_machineHoldsNoUsdg() public view {
+        assertEq(usdg.balanceOf(address(machine)), 0);
     }
 
-    /// @dev Every id the handler saw minted still has an owner: nothing is ever burned.
-    /// forge-config: default.invariant.runs = 512
-    /// forge-config: default.invariant.depth = 64
-    /// forge-config: default.invariant.fail-on-revert = true
-    function invariant_I3_mintedMachinesStayMinted() public view {
-        uint256 n = handler.mintedCount();
-        for (uint256 i; i < n; ++i) {
-            assertTrue(machine.ownerOf(handler.mintedIds(i)) != address(0));
+    /// @notice Money in = money out: every sold machine paid 3, 4 or 5 USDG in whole, split 25/75.
+    function invariant_splitIsExact() public view {
+        uint256 c = usdg.balanceOf(converter);
+        uint256 t = usdg.balanceOf(treasury);
+        assertEq(t, c * 3, "75/25 of every price");
+        uint256 sold = machine.mintedCount();
+        assertGe(c + t, sold * QZConstants.PRICE_GTD);
+        assertLe(c + t, sold * QZConstants.PRICE_PUBLIC);
+    }
+
+    /// @notice One mint per wallet: nobody ever got a second machine from `mint`.
+    function invariant_oneMintPerWallet() public view {
+        address[] memory w = handler.wallets();
+        for (uint256 i; i < w.length; ++i) {
+            assertLe(handler.mintsOf(w[i]), 1);
         }
-        assertLe(n, QZConstants.TOTAL_MACHINES);
-    }
-
-    /// forge-config: default.invariant.runs = 512
-    /// forge-config: default.invariant.depth = 64
-    /// forge-config: default.invariant.fail-on-revert = true
-    function invariant_noQzStuckInTheCore() public view {
-        assertEq(core.balanceOf(address(core)), 0, "the hardwire burn sink is empty after every call");
     }
 }

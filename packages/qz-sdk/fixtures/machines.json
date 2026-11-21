@@ -2,15 +2,16 @@
   "items": [
     {
       "id": 39,
+      "owner": "0x1111111111111111111111111111111111111111",
+      "mintedAt": 1763300100,
+      "lit": true,
+      "litAt": 1763511000,
       "tier": 2,
       "relic": false,
       "track": 0,
-      "ticker": "NVDA",
-      "owner": "0x1111111111111111111111111111111111111111",
-      "eid": 30416,
-      "hardwired": true
+      "ticker": "NVDA"
     }
   ],
   "nextCursor": null,
-  "total": 2222
+  "total": 1
 }

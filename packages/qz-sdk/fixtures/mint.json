@@ -1,0 +1,40 @@
+{
+  "chainTime": 1763520000,
+  "phase": "closed",
+  "configured": true,
+  "schedule": {
+    "start": 1763290000,
+    "gtdEnd": 1763376400,
+    "fcfsEnd": 1763419600,
+    "publicEnd": 1763506000
+  },
+  "minted": 1,
+  "maxSupply": 2222,
+  "prices": {
+    "gtd": "3000000",
+    "fcfs": "4000000",
+    "public": "5000000"
+  },
+  "volume": "3000000",
+  "toConverter": "750000",
+  "toTreasury": "2250000",
+  "paused": false,
+  "finalized": true,
+  "finalizedAt": 1763506100,
+  "hashLocked": true,
+  "lockedAt": 1763506200,
+  "revealed": true,
+  "revealedAt": 1763506400,
+  "revealOffset": "1234",
+  "recent": [
+    {
+      "machineId": 39,
+      "minter": "0x1111111111111111111111111111111111111111",
+      "phase": 1,
+      "price": "3000000",
+      "txHash": "0xabababababababababababababababababababababababababababababababab",
+      "blockNumber": 1201,
+      "timestamp": 1763300100
+    }
+  ]
+}

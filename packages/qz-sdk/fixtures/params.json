@@ -1,17 +1,23 @@
 {
   "owner": "0x2222222222222222222222222222222222222222",
+  "treasury": "0x2222222222222222222222222222222222222222",
+  "roles": {
+    "pauser": "0x2222222222222222222222222222222222222222",
+    "revealer": "0x2222222222222222222222222222222222222222",
+    "keeper": "0x2222222222222222222222222222222222222222",
+    "executor": "0x2222222222222222222222222222222222222222"
+  },
   "paused": {
-    "core": false,
-    "buys": false,
-    "hook": false,
+    "machine": false,
+    "forge": false,
     "converter": false
   },
   "routesSealed": true,
   "metadataFrozen": false,
   "contracts": {
-    "QZCore": "0x3333333333333333333333333333333333333333"
+    "QZMachine": "0x3333333333333333333333333333333333333333"
   },
   "limits": {
-    "F0_MAX_PER_WALLET": "2000000000000000000"
+    "MAX_PER_WALLET": "1"
   }
 }

@@ -4,16 +4,16 @@
       "track": 0,
       "ticker": "NVDA",
       "stock": "0x3333333333333333333333333333333333333333",
-      "accPerWeight": "193198761",
+      "accPerWeight": "38640000000000000000000000000000000",
       "totalNotified": "1250000000000000",
       "frozen": false,
       "frozenReason": null,
-      "lastNotifiedAt": 1763299990
+      "lastNotifiedAt": 1763300000
     }
   ],
   "converter": {
     "inFallback": false,
     "paused": false,
-    "lastEpochOpenedAt": 1763299980
+    "lastEpochOpenedAt": 1763299000
   }
 }

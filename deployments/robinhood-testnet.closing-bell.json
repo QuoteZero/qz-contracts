@@ -1,0 +1,51 @@
+{
+  "name": "robinhood-testnet-closing-bell",
+  "chainId": 46630,
+  "deployedAt": "2026-11-23T11:20:23.988Z",
+  "startBlock": 156993388,
+  "explorer": "https://explorer.testnet.chain.robinhood.com",
+  "deployer": "0x0b9a8B09905803C6671f722F062AD486C920fbdE",
+  "roles": {
+    "calendar": "0x0b9a8B09905803C6671f722F062AD486C920fbdE",
+    "treasury": "0x0b9a8B09905803C6671f722F062AD486C920fbdE",
+    "poster": "0x0b9a8B09905803C6671f722F062AD486C920fbdE",
+    "boardOwner": "0x0b9a8B09905803C6671f722F062AD486C920fbdE",
+    "sponsor": "0x0000000000000000000000000000000000000000"
+  },
+  "profile": {
+    "voidAfter": 1200,
+    "claimDelay": 1200,
+    "minLead": 120,
+    "snapshotDelay": 60
+  },
+  "board": {
+    "maxAge": 120,
+    "supportedMask": 831
+  },
+  "contracts": {
+    "QZBoardSource": "0x75A5874d0676420247764f30DEFa20AdA9276C56",
+    "QZCloseBell": "0x617d88b1aa8a5A1eEe709b03811670Fa341B7594"
+  },
+  "dependencies": {
+    "QZMachine": "0xdC0913Ac1d7fc7a8c4768EcE7b6164b24266bb86",
+    "QZForge": "0xec93A81d5851eF77409531E722e23a1d7997C69c",
+    "qz": "0x46475dB303B7556C8659Ae6990D135b48a6c393e",
+    "usdg": "0x3867543A02f8E9B5DDF49dDd10D6B57e94F6D23E"
+  },
+  "transactions": {
+    "QZBoardSource": {
+      "hash": "0xf6db5bd471d77ed0c05d9f2d3341963d11d40714bbf39a4f3d67de3765166f75",
+      "blockNumber": 156993388,
+      "gasUsed": 670080
+    },
+    "QZCloseBell": {
+      "hash": "0xd530c520323b8a2f32a806637e4d2ade9616f778f7cca5eb32bc1014718ce5dd",
+      "blockNumber": 156993493,
+      "gasUsed": 4011078
+    }
+  },
+  "verified": {
+    "QZBoardSource": true,
+    "QZCloseBell": true
+  }
+}

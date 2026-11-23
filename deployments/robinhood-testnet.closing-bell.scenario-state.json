@@ -1,0 +1,20 @@
+{
+  "pending": {},
+  "failed": {},
+  "vars": {
+    "supply0": "1000000000000000000000000000",
+    "dead0": "0",
+    "qz-user-b0": "287398538765864303719593",
+    "qz-public0": "150000000000000000000000",
+    "qz-user-a0": "281661473022700788141301",
+    "bell-qz0": "0",
+    "baselineTs": "1795433220",
+    "S": "1795433546",
+    "sideEffects0": "{\"lockedPrincipal\":\"300000000000000000000000\",\"litCount\":\"3\",\"notified\":\"30328714008385586|0|0\",\"pot\":\"0|0|0\",\"claimable1\":\"0\"}",
+    "heat1-before-transfer": "1,1,1,0,1",
+    "qz-user-b-before-refund": "281398538765864303719593",
+    "qz-public-before-void": "47000000000000000000000",
+    "usdg-user-a-before": "7000000",
+    "usdg-public-before": "5000000"
+  }
+}

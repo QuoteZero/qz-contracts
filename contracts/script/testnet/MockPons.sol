@@ -14,7 +14,7 @@ import {IPonsFactory} from "../../src/fee/IPons.sol";
 ///         `new MOCK_PonsFactory(creatorFeeRecipient, protocolFeeRecipient, sweepOperator)` deploys in one go:
 ///           - `MOCK_PonsFeeEscrow`    same `credit(recipient)` payable / `claim()` / `balanceOf` as `PonsV2FeeEscrow`
 ///                                     (native ETH ledger, `claim` pays the caller its whole balance, `NoBalance` at 0);
-///           - `MOCK_QZTestToken`      "QZ TEST TOKEN (MOCK)", 18 decimals, the launched token;
+///           - `MOCK_QZTestToken`      "Test QZ" ("tQZ"), 18 decimals, the launched token;
 ///           - `MOCK_PonsCurve`        a constant-product curve with the real fee model (1% base fee, 2% creator tax,
 ///                                     both on the ETH side; creator share = 70% of the base fee + 100% of the tax,
 ///                                     protocol share = 30% of the base fee) whose `sweepFees(uint256)` credits the
@@ -31,6 +31,8 @@ contract MOCK_PonsFactory is IPonsFactory {
     MOCK_PonsHook public immutable hook;
     address public immutable creatorFeeRecipient;
     uint8 public phase;
+    /// @notice Test $QZ minted once to the factory's deployer, on top of the curve's supply (fixed forever: `lock`).
+    uint256 public constant TESTNET_RESERVE = 10_000_000_000 ether;
 
     constructor(address creatorFeeRecipient_, address protocolFeeRecipient_, address sweepOperator_) {
         creatorFeeRecipient = creatorFeeRecipient_;
@@ -39,6 +41,9 @@ contract MOCK_PonsFactory is IPonsFactory {
         curve = new MOCK_PonsCurve(token, escrow, creatorFeeRecipient_, protocolFeeRecipient_, sweepOperator_);
         hook = new MOCK_PonsHook(escrow, creatorFeeRecipient_, protocolFeeRecipient_, sweepOperator_);
         token.mint(address(curve), curve.INITIAL_TOKEN_RESERVE());
+        // The testnet dapp hands this token out through `QZTestFaucet`, which needs far more than the curve's 1B supply
+        // would let anyone buy with testnet ETH: a fixed reserve goes to whoever deploys the factory, then no more is ever minted.
+        token.mint(msg.sender, TESTNET_RESERVE);
         token.lock();
     }
 
@@ -120,11 +125,11 @@ contract MOCK_QZTestToken is ERC20 {
     bool public locked;
 
     function name() public pure override returns (string memory) {
-        return "QZ TEST TOKEN (MOCK)";
+        return "Test QZ";
     }
 
     function symbol() public pure override returns (string memory) {
-        return "QZTEST";
+        return "tQZ";
     }
 
     function mint(address to, uint256 amount) external {

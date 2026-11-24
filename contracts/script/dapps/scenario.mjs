@@ -65,15 +65,40 @@ const px = (n) => String(BigInt(n) * 10n ** 8n);
 
 const KEY_ENV = {deployer: 'DEPLOYER_PRIVATE_KEY', 'user-a': 'USER_A_PRIVATE_KEY', 'user-b': 'USER_B_PRIVATE_KEY'};
 
+// A keyed RPC URL (Alchemy .../v2/<key>) must not reach argv (readable in /proc for the whole run) or a stored error (state.failed is written
+// to the state file). `cast` gets the URL from its environment, a `--rpc-url` pair in the args is dropped, and any URL in text that is stored
+// or printed is blanked down to scheme and host.
+const CAST_RPC_ENV = {ETH_RPC_URL: RPC, FOUNDRY_ETH_RPC_URL: RPC};
+function withoutRpcUrl(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--rpc-url') i++;
+    else out.push(args[i]);
+  }
+  return out;
+}
+function maskUrls(text) {
+  return String(text).replace(/https?:\/\/[^\s'"<>()|]+/gi, (u) => {
+    try {
+      const x = new URL(u);
+      return x.pathname === '/' && !x.search && !x.hash && !x.username && !x.password ? u : `${x.protocol}//${x.host}/<masked>`;
+    } catch {
+      return '<url>';
+    }
+  });
+}
+const scrub = (text) => maskUrls(String(text).split(RPC).join('<rpc>'));
+
 function cast(args, {input} = {}) {
-  const env = {...process.env};
+  const argv = withoutRpcUrl(args);
+  const env = {...process.env, ...CAST_RPC_ENV};
   for (const k of [...Object.values(KEY_ENV), 'ETH_PRIVATE_KEY', 'FOUNDRY_PROFILE']) delete env[k];
   try {
-    return execFileSync('cast', args, {env, input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']}).trim();
+    return execFileSync('cast', argv, {env, input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']}).trim();
   } catch (e) {
-    const msg = String((e.stderr && String(e.stderr).trim()) || (e.stdout && String(e.stdout).trim()) || e.message)
-      .split('\n').filter((l) => !/^Warning:/.test(l)).slice(0, 8).join(' | ');
-    const err = new Error(`cast ${args[0]} ${args.slice(1, 3).join(' ')}: ${msg}`);
+    const msg = scrub(String((e.stderr && String(e.stderr).trim()) || (e.stdout && String(e.stdout).trim()) || e.message)
+      .split('\n').filter((l) => !/^Warning:/.test(l)).slice(0, 8).join(' | '));
+    const err = new Error(`cast ${argv[0]} ${scrub(argv.slice(1, 3).join(' '))}: ${msg}`);
     err.revert = msg;
     throw err;
   }

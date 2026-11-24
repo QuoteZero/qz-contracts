@@ -12,17 +12,19 @@ CONTRACTS="$(cd "$HERE/../.." && pwd)"
 REPO="$(cd "$CONTRACTS/.." && pwd)"
 DEPLOYMENTS_DIR="${QZ_DEPLOYMENTS_DIR:-$REPO/deployments}"
 FILE="$DEPLOYMENTS_DIR/robinhood-testnet.assets.json"
-RPC="${QZ_RPC_URL:?QZ_RPC_URL required}"
+# A keyed RPC URL (Alchemy) never goes on argv or into a printed log: cast reads ETH_RPC_URL, forge reads FOUNDRY_ETH_RPC_URL.
+export ETH_RPC_URL="${QZ_RPC_URL:?QZ_RPC_URL required}"
+export FOUNDRY_ETH_RPC_URL="$ETH_RPC_URL"
 : "${DEPLOYER_PRIVATE_KEY:?DEPLOYER_PRIVATE_KEY required}"
 
-if [ -f "$FILE" ] && [ "$(cast codesize "$(jq -r .usdg "$FILE")" --rpc-url "$RPC" 2>/dev/null || echo 0)" != "0" ]; then
+if [ -f "$FILE" ] && [ "$(cast codesize "$(jq -r .usdg "$FILE")" 2>/dev/null || echo 0)" != "0" ]; then
   echo "testnet assets exist: $FILE"
   exit 0
 fi
 mkdir -p "$DEPLOYMENTS_DIR"
 OUT="$(mktemp)"; trap 'rm -f "$OUT"' EXIT
-(cd "$CONTRACTS" && forge script script/testnet/DeployTestnetAssets.s.sol:DeployTestnetAssets --rpc-url "$RPC" --broadcast > "$OUT" 2>&1) \
-  || { tail -n 30 "$OUT" >&2; exit 1; }
+(cd "$CONTRACTS" && forge script script/testnet/DeployTestnetAssets.s.sol:DeployTestnetAssets --broadcast > "$OUT" 2>&1) \
+  || { tail -n 30 "$OUT" | sed -E 's#https?://[^[:space:]]*/v2/[A-Za-z0-9_-]+#<masked-rpc>#g' >&2; exit 1; }
 sed -n 's/^ *QZ_ASSETS_JSON://p' "$OUT" | tail -n 1 | jq . > "$FILE.tmp"
 mv "$FILE.tmp" "$FILE"
 echo "deployed testnet assets: $FILE"
